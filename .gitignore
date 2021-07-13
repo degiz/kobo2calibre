@@ -1,0 +1,10 @@
+.projectile
+.python-version
+pyrightconfig.json
+poetry.lock
+
+__pycache__
+.mypy_cache
+
+.DS_Store
+**.sqlite*
