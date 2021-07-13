@@ -21,7 +21,7 @@ nlp.enable_pipe("senter")
 logger = logging.getLogger(__name__)
 
 
-def get_prev_sentences_offset(node, n_sentences_offset):
+def get_prev_sentences_offset(node, n_sentences_offset) -> int:
     sentences = [t.text_with_ws for t in nlp(str(node)).sents]
     prev_sentences_offset = 0
     if n_sentences_offset > 1:
@@ -30,7 +30,7 @@ def get_prev_sentences_offset(node, n_sentences_offset):
     return prev_sentences_offset
 
 
-def encode_cfi(target_node, target_offset):
+def encode_cfi(target_node, target_offset) -> str:
     nodes = [p for p in target_node.parents][::-1]
     nodes.append(target_node)
     cfi = ""
@@ -132,10 +132,10 @@ def parse_kobo_highlights(
             n_tag += 1
 
         if not target_start_node:
-            print("Failed to find the target start node")
+            logger.debug("Failed to find the target start node")
             return None
         if not target_end_node:
-            print("Failed to find the target end node")
+            logger.debug("Failed to find the target end node")
             return None
 
         start_cfi = encode_cfi(target_start_node[1], kobo_target_start_offset)
