@@ -74,6 +74,10 @@ def parse_kobo_highlights(
     kobo_n_tag_end, kobo_n_sentence_end = [
         int(i) for i in highlight.end_path.split("\\.")[1:]
     ]
+    logger.debug(
+        f"parsing highlight: {highlight.start_path}, "
+        f"{highlight.end_path}, {highlight.content_path}"
+    )
 
     input_filename = pathlib.Path(book_prefix) / pathlib.Path(highlight.content_path)
 
@@ -92,7 +96,11 @@ def parse_kobo_highlights(
         first_parent = soup.body
 
         for child in first_parent.descendants:
-            if not isinstance(child, bs4.element.NavigableString) or str(child) == "\n":
+            if (
+                not isinstance(child, bs4.element.NavigableString)
+                or str(child) == "\n"
+                or str(child) == " "
+            ):
                 continue
 
             if n_tag == kobo_n_tag_start:
