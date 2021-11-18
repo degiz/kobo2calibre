@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_prev_sentences_offset(node, n_sentences_offset) -> int:
-    sentences = [t.text_with_ws for t in nlp(str(node)).sents]
+    raw_sentences = [t.text_with_ws for t in nlp(str(node)).sents]
+    # Is this needed for the future?
+    sentences = []
+    for raw_sentence in raw_sentences:
+        sentences.extend(raw_sentence.split(":"))
     prev_sentences_offset = 0
     if n_sentences_offset > 1:
         for i in range(0, n_sentences_offset - 1):
@@ -100,6 +104,7 @@ def parse_kobo_highlights(
                 not isinstance(child, bs4.element.NavigableString)
                 or str(child) == "\n"
                 or str(child) == " "
+                or str(child) == "\u00A0"  # non-breaking space, used in the tables
             ):
                 continue
 
