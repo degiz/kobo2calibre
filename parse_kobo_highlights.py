@@ -50,23 +50,26 @@ def main(args) -> None:
             with zipfile.ZipFile(book_calibre_epub, "r") as zip_ref:
                 zip_ref.extractall(tmpdirname)
 
-                spine_index_map, fixed_path = calibre.get_spine_index_map(
-                    pathlib.Path(tmpdirname)
-                )
-
-                count = 0
-                for i, h in enumerate(highlights):
-                    if h.content_path in fixed_path:
-                        highlights[i] = highlights[i]._replace(
-                            content_path=fixed_path[h.content_path]
-                        )
-                    calibre_highlight = converter.parse_kobo_highlights(
-                        tmpdirname, h, likely_book_id, spine_index_map
+                try:
+                    spine_index_map, fixed_path = calibre.get_spine_index_map(
+                        pathlib.Path(tmpdirname)
                     )
-                    if calibre_highlight:
-                        to_insert.append(calibre_highlight)
-                        count += 1
-                logger.debug(f"..found {count} highlights")
+
+                    count = 0
+                    for i, h in enumerate(highlights):
+                        if h.content_path in fixed_path:
+                            highlights[i] = highlights[i]._replace(
+                                content_path=fixed_path[h.content_path]
+                            )
+                        calibre_highlight = converter.parse_kobo_highlights(
+                            tmpdirname, h, likely_book_id, spine_index_map
+                        )
+                        if calibre_highlight:
+                            to_insert.append(calibre_highlight)
+                            count += 1
+                    logger.debug(f"..found {count} highlights")
+                except Exception as e:
+                    logger.error(f"..failed to convert the highlights: {e}")
 
     db.insert_highlights_into_calibre(calibre_db, to_insert)
 
