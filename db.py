@@ -104,11 +104,23 @@ def insert_highlights_into_calibre(
             f"book, format, user_type, user, "
             f"timestamp, annot_id, annot_type, "
             f"annot_data, searchable_text) VALUES("
-            f"{h.book}, '{h.format}', '{h.user_type}', '{h.user}', "
-            f"{h.timestamp}, '{h.highlight['uuid']}', '{h.annot_type}', "
-            f"'{json.dumps(h.highlight)}', '{h.searchable_text}')"
+            f"?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        cur.execute(query)
+        logger.debug(f"Query: {query}")
+        cur.execute(
+            query,
+            (
+                h.book,
+                h.format,
+                h.user_type,
+                h.user,
+                h.timestamp,
+                h.highlight["uuid"],
+                h.annot_type,
+                json.dumps(h.highlight),
+                h.searchable_text,
+            ),
+        )
         actually_inserted_count += 1
 
     logger.info(f"Inserted {actually_inserted_count} new highlights")

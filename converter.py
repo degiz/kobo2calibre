@@ -6,16 +6,29 @@ from datetime import datetime
 import time
 
 import bs4
+from spacy.language import Language
+
 import spacy
 from bs4 import BeautifulSoup
 
 import db
 from db import CalibreHighlight
 
+
+@Language.component("set_custom_boundaries")
+def set_custom_boundaries(doc):
+    """Somehow Kobo splits text here."""
+    for token in doc[:-1]:
+        if token.text == "e.g.":
+            doc[token.i + 1].is_sent_start = True
+    return doc
+
+
 # We need that for sentence tokenization
-nlp = spacy.load("en_core_web_sm", exclude=["parser"])
+nlp = spacy.load("en_core_web_sm")
 # nlp = spacy.load("ru_core_news_sm", exclude=["parser"])
 nlp.enable_pipe("senter")
+nlp.add_pipe("set_custom_boundaries", before="parser")
 
 
 logger = logging.getLogger(__name__)
@@ -82,6 +95,7 @@ def parse_kobo_highlights(
         f"parsing highlight: {highlight.start_path}, "
         f"{highlight.end_path}, {highlight.content_path}"
     )
+    logger.debug(f"Text: {highlight.text}")
 
     input_filename = pathlib.Path(book_prefix) / pathlib.Path(highlight.content_path)
 
@@ -100,6 +114,10 @@ def parse_kobo_highlights(
         first_parent = soup.body
 
         for child in first_parent.descendants:
+            parent_names = [p.name for p in child.parents]
+            if "figure" in parent_names:
+                continue
+
             if (
                 not isinstance(child, bs4.element.NavigableString)
                 or str(child) == "\n"
