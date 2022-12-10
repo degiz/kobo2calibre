@@ -80,7 +80,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("kobo_volume", type=str, help="Full path to the Kobo volume")
     parser.add_argument(
-        "calibre_library", type=str, help="Full path to the Calibre library",
+        "calibre_library",
+        type=str,
+        help="Full path to the Calibre library",
     )
     parser.add_argument("--debug", "-vv", action="store_true")
     args = parser.parse_args()
