@@ -10,7 +10,7 @@ The script will:
 
 # installation
 
-You can use `poetry install` to install all the dependencies:
+The script itself doesn't have dependencies, but if you want to contribute, you can use `poetry install` to install all the dev dependencies:
 
 ```bash
 poetry update && poetry install
