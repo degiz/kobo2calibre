@@ -4,11 +4,10 @@ import uuid
 from typing import Optional
 from datetime import datetime
 import time
+from sentence_tokenizer import REGEX_KTE
 
 import bs4
-from spacy.language import Language
 
-import spacy
 from bs4 import BeautifulSoup
 
 import db
@@ -24,22 +23,18 @@ def set_custom_boundaries(doc):
     return doc
 
 
-# We need that for sentence tokenization
-nlp = spacy.load("en_core_web_sm")
-# nlp = spacy.load("ru_core_news_sm", exclude=["parser"])
-nlp.enable_pipe("senter")
-nlp.add_pipe("set_custom_boundaries", before="parser")
-
-
 logger = logging.getLogger(__name__)
 
 
 def get_prev_sentences_offset(node, n_sentences_offset) -> int:
-    raw_sentences = [t.text_with_ws for t in nlp(str(node)).sents]
-    # Is this needed for the future?
-    sentences = []
-    for raw_sentence in raw_sentences:
-        sentences.extend(raw_sentence.split(":"))
+    logger.debug(
+        "Getting prev sentences offset, node: %s, offset: %d", node, n_sentences_offset
+    )
+    groups = REGEX_KTE.split(str(node))
+    sentences = [g for g in groups if g != ""]
+
+    logger.debug("Sentences: %s", sentences)
+
     prev_sentences_offset = 0
     if n_sentences_offset > 1:
         for i in range(0, n_sentences_offset - 1):
@@ -48,6 +43,9 @@ def get_prev_sentences_offset(node, n_sentences_offset) -> int:
 
 
 def encode_cfi(target_node, target_offset) -> str:
+    logger.debug(
+        "Encoding CFI, target_node: %s, target_offset: %s", target_node, target_offset
+    )
     nodes = [p for p in target_node.parents][::-1]
     nodes.append(target_node)
     cfi = ""
@@ -123,8 +121,16 @@ def parse_kobo_highlights(
                 or str(child) == "\n"
                 or str(child) == " "
                 or str(child) == "\u00A0"  # non-breaking space, used in the tables
+                or str(child).strip() == ""
             ):
                 continue
+
+            if "30_rm_draft-3-4" in str(input_filename):
+                logger.debug(
+                    f"input_filename: {input_filename}\n"
+                    f"n_tag: {n_tag}\n"
+                    f"child: {child}"
+                )
 
             if n_tag == kobo_n_tag_start:
                 target_start_node = (str(child), child)

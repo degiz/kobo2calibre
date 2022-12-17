@@ -34,12 +34,17 @@ def get_spine_index_map(
         ]
         spine_index = {idref: i for i, idref in enumerate(spine_ids)}
 
+        logger.debug(f"Spine index: {spine_index}")
+
         # Read manifest
         hrefs = [
             s
             for s in soup.package.manifest
-            if type(s) == bs4.element.Tag and "application/xhtml" in s["media-type"]
+            if type(s) == bs4.element.Tag
+            and "application/xhtml" in s["media-type"]
+            and (s["id"] in spine_ids)
         ]
+        logger.debug(f"Found {len(hrefs)} hrefs")
         result = {}
         fixed_paths = {}
         for h in hrefs:

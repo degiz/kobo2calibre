@@ -1,6 +1,6 @@
 # kobo2Calibre
 
-Embed highlights from Kobo device in Calibre book.
+Embed highlights from Kobo device in Calibre book. Tested on the books converted using [calibre-kobo-driver](https://github.com/jgoguen/calibre-kobo-driver).
 
 The script will:
 
@@ -10,11 +10,10 @@ The script will:
 
 # installation
 
-You can use `poetry install` to install all the dependencies, additionally, you need to install a `spacy` model:
+You can use `poetry install` to install all the dependencies:
 
 ```bash
 poetry update && poetry install
-poetry run python -m spacy download en_core_web_sm
 ```
 
 # Usage
