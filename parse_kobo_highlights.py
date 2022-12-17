@@ -55,6 +55,8 @@ def main(args) -> None:
                         pathlib.Path(tmpdirname)
                     )
 
+                    logger.debug(f"Spine index map: {spine_index_map}")
+
                     count = 0
                     for i, h in enumerate(highlights):
                         if h.content_path in fixed_path:
@@ -66,10 +68,14 @@ def main(args) -> None:
                         )
                         if calibre_highlight:
                             to_insert.append(calibre_highlight)
+                            logger.debug(f"Found highlight: {calibre_highlight}")
                             count += 1
                     logger.debug(f"..found {count} highlights")
                 except Exception as e:
-                    logger.error(f"..failed to convert the highlights: {e}")
+                    logger.error(
+                        f"..failed to convert the highlights: {e} "
+                        f"book: {book_calibre_epub}"
+                    )
 
     db.insert_highlights_into_calibre(calibre_db, to_insert)
 

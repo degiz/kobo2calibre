@@ -1,22 +1,36 @@
 from typing import List
 import re
 
+# This regex is inspired by https://bit.ly/3HqIzoP
+REGEX_EPUB = re.compile(
+    r"""
+    [^.!?\s] [^.!?]* # beginning of sentence, ignoring new lines
+    (?:[.!?](?!['\"”]?\s|$)[^?]*)* # the sentence itself
+    [.!?]?['\"”\s]?[\s]? # end of sentence
+    """,
+    re.VERBOSE,
+)
 
-def tokenize_sentences(text: str) -> List[str]:
-    """Tokenize a string of text into sentences."""
+# A regex that will most likely work on books converted with KTE plugin
+REGEX_KTE = re.compile(
+    r'(\s*.*?[\.\!\?\:][\'"\u201c\u201d\u2018\u2019\u2026]?\s*)',
+    re.UNICODE | re.MULTILINE,
+)
 
-    # Original regex from https://bit.ly/3HqIzoP
-    regex = re.compile(
-        r"""
-        [^.!?\s] [^.!?\n]* # beginning of sentence
-        (?:[.!?](?!['\"”]?\s|$)[^.!?]*)* # the sentence itself
-        [.!?]?['\"”\s]?[\s]? # end of sentence
-        """,
-        re.VERBOSE,
-    )
-    regex_result = re.findall(regex, text)
 
-    # merge adjacent sentences between quotes
+# def tokenize_sentences(text: str) -> List[str]:
+#     """Tokenize a string of text into sentences."""
+
+#     regex_result = re.findall(REGEX_KEPUBIFY, text)
+#     return regex_result
+
+
+def tokenize_epub_sentences(text: str) -> List[str]:
+    """Tokenize a string of text into sentences in EPUB format."""
+
+    regex_result = re.findall(REGEX_EPUB, text)
+
+    # merge adjacent sentences between quotes, to repeat what Spacy does
     result = []
     i = 0
     while i < len(regex_result) - 1:
