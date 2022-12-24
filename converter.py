@@ -14,15 +14,6 @@ import db
 from db import CalibreHighlight
 
 
-@Language.component("set_custom_boundaries")
-def set_custom_boundaries(doc):
-    """Somehow Kobo splits text here."""
-    for token in doc[:-1]:
-        if token.text == "e.g.":
-            doc[token.i + 1].is_sent_start = True
-    return doc
-
-
 logger = logging.getLogger(__name__)
 
 
