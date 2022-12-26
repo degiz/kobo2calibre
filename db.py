@@ -5,8 +5,6 @@ import sqlite3
 from collections import namedtuple
 from typing import Dict, List, Tuple
 
-import calibre
-
 logger = logging.getLogger(__name__)
 
 KoboHighlight = namedtuple(
@@ -30,15 +28,27 @@ CalibreHighlight = namedtuple(
 )
 
 
+def get_calibre_book_id(kobo_volume: pathlib.Path, lpath: str) -> int:
+    """Get the calibre book id from the lpath of the book in the kobo db."""
+    calibre_device_metadata = kobo_volume.resolve() / "metadata.calibre"
+    with open(calibre_device_metadata) as f:
+        metadata = json.load(f)
+        target_book = list(
+            filter(lambda x: x.get("lpath").split("/")[-1] == lpath, metadata)
+        )[0]
+        return target_book["application_id"]
+
+
 def get_likely_book_path_from_calibre(
     calibre_db_path: pathlib.Path, kobo_volume: pathlib.Path, book_lpath: str
 ) -> Tuple[int, str]:
+    """Get the likely book path from the calibre db."""
     con = sqlite3.connect(calibre_db_path)
     cur = con.cursor()
 
     book_lpath = book_lpath.split("/")[-1]
 
-    book_id = calibre.get_calibre_book_id(kobo_volume, book_lpath)
+    book_id = get_calibre_book_id(kobo_volume, book_lpath)
 
     book_path = cur.execute(f"SELECT path FROM books WHERE id = {book_id}").fetchone()[
         0
@@ -51,6 +61,7 @@ def get_likely_book_path_from_calibre(
 def get_dictinct_highlights_from_kobo(
     input_kobo_db: pathlib.Path,
 ) -> Dict[str, List[KoboHighlight]]:
+    """Get distinct highlights from the kobo db."""
     con = sqlite3.connect(input_kobo_db)
     cur = con.cursor()
 
@@ -81,9 +92,37 @@ def get_dictinct_highlights_from_kobo(
     return result
 
 
+def get_highlights_from_kobo_by_book(
+    input_kobo_db: pathlib.Path, book: str
+) -> List[KoboHighlight]:
+    """Get highlights from the kobo db for a specific book."""
+    con = sqlite3.connect(input_kobo_db)
+
+    result = []
+
+    cur1 = con.cursor()
+    for row in cur1.execute(
+        f"SELECT * FROM `Bookmark` WHERE `VolumeID` = '{book}' AND text !=''"
+    ):
+        content_path = row[2].split("epub!")[-1]
+        content_path = content_path.lstrip("!")
+        content_path = content_path.replace("!", "/")
+        if "#" in content_path:
+            content_path = content_path.split("#")[-2]
+        if not content_path:
+            continue
+
+        highlight = KoboHighlight(row[3], row[6], row[5], row[8], row[9], content_path)
+        result.append(highlight)
+
+    con.close()
+    return result
+
+
 def insert_highlights_into_calibre(
     output_calibre_db: pathlib.Path, books_highlights: List[CalibreHighlight]
-) -> None:
+) -> int:
+    """Insert highlights into the calibre db."""
     con = sqlite3.connect(output_calibre_db)
     cur = con.cursor()
 
@@ -100,11 +139,11 @@ def insert_highlights_into_calibre(
             continue
 
         query = (
-            f"INSERT INTO annotations( "
-            f"book, format, user_type, user, "
-            f"timestamp, annot_id, annot_type, "
-            f"annot_data, searchable_text) VALUES("
-            f"?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO annotations( "
+            "book, format, user_type, user, "
+            "timestamp, annot_id, annot_type, "
+            "annot_data, searchable_text) VALUES("
+            "?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         logger.debug(f"Query: {query}")
         cur.execute(
@@ -127,3 +166,4 @@ def insert_highlights_into_calibre(
 
     con.commit()
     con.close()
+    return actually_inserted_count

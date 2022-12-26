@@ -1,20 +1,28 @@
 import argparse
+from typing import Any, Optional
 import logging
 import pathlib
-import tempfile
-import zipfile
 
-import calibre
-import converter
-import db
+try:
+    # For calibre gui plugin
+    from calibre_plugins.kobo2calibre import (
+        converter,
+    )  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+except ImportError:
+    # For cli
+    import converter  # type: ignore
+    import db  # type: ignore
+
 
 logger = logging.getLogger(__name__)
 
 
-def configure_file_logging(args) -> None:
+def configure_file_logging(args: Optional[Any]) -> None:
+    """Configure logging to file."""
     formatter = logging.Formatter("[%(levelname)-5.5s][%(name)s] %(message)s")
     stream_handler = logging.StreamHandler()
-    if args.debug:
+    if not args or args.debug:
         stream_handler.setLevel(logging.DEBUG)
     else:
         stream_handler.setLevel(logging.INFO)
@@ -24,10 +32,11 @@ def configure_file_logging(args) -> None:
 
 
 def main(args) -> None:
+    """Run the CLI program."""
     configure_file_logging(args)
 
     calibre_db = pathlib.Path(args.calibre_library).resolve() / "metadata.db"
-    kobo_db = pathlib.Path(args.kobo_volume).resolve() / ".kobo/KoboReader.sqlite"
+    kobo_db = pathlib.Path(args.kobo_volume).resolve() / ".kobo" / "KoboReader.sqlite"
 
     to_insert = []
     for volume, highlights in db.get_dictinct_highlights_from_kobo(kobo_db).items():
@@ -46,36 +55,11 @@ def main(args) -> None:
         )
         book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
 
-        with tempfile.TemporaryDirectory() as tmpdirname:
-            with zipfile.ZipFile(book_calibre_epub, "r") as zip_ref:
-                zip_ref.extractall(tmpdirname)
-
-                try:
-                    spine_index_map, fixed_path = calibre.get_spine_index_map(
-                        pathlib.Path(tmpdirname)
-                    )
-
-                    logger.debug(f"Spine index map: {spine_index_map}")
-
-                    count = 0
-                    for i, h in enumerate(highlights):
-                        if h.content_path in fixed_path:
-                            highlights[i] = highlights[i]._replace(
-                                content_path=fixed_path[h.content_path]
-                            )
-                        calibre_highlight = converter.parse_kobo_highlights(
-                            tmpdirname, h, likely_book_id, spine_index_map
-                        )
-                        if calibre_highlight:
-                            to_insert.append(calibre_highlight)
-                            logger.debug(f"Found highlight: {calibre_highlight}")
-                            count += 1
-                    logger.debug(f"..found {count} highlights")
-                except Exception as e:
-                    logger.error(
-                        f"..failed to convert the highlights: {e} "
-                        f"book: {book_calibre_epub}"
-                    )
+        to_insert.extend(
+            converter.process_calibre_epub(
+                book_calibre_epub, likely_book_id, highlights
+            )
+        )
 
     db.insert_highlights_into_calibre(calibre_db, to_insert)
 
