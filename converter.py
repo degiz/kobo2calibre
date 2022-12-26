@@ -1,23 +1,112 @@
-import pathlib
 import logging
-import uuid
-from typing import Optional
-from datetime import datetime
+import pathlib
+import re
+import tempfile
 import time
-from sentence_tokenizer import REGEX_KTE
+import uuid
+import zipfile
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 
 import bs4
-
 from bs4 import BeautifulSoup
 
-import db
-from db import CalibreHighlight
-
+try:
+    # For calibre gui plugin
+    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+except ImportError:
+    # For cli
+    import db  # type: ignore
 
 logger = logging.getLogger(__name__)
 
+# A regex that will most likely work on books converted with KTE plugin
+REGEX_KTE = re.compile(
+    r'(\s*.*?[\.\!\?\:][\'"\u201c\u201d\u2018\u2019\u2026]?\s*)',
+    re.UNICODE | re.MULTILINE,
+)
+
+
+def get_spine_index_map(
+    root_dir: pathlib.Path,
+) -> Tuple[Dict[str, int], Dict[str, str]]:
+    """Get the spine index map from the content.opf file."""
+    content_file = [f for f in root_dir.rglob("content.opf")][0]
+    with open(str(content_file)) as f:
+        soup = bs4.BeautifulSoup(f.read(), "html.parser")
+
+        # Read spine
+        spine_ids = [
+            s["idref"]
+            for s in soup.package.spine.children
+            if type(s) == bs4.element.Tag
+        ]
+        spine_index = {idref: i for i, idref in enumerate(spine_ids)}
+
+        logger.debug(f"Spine index: {spine_index}")
+
+        # Read manifest
+        hrefs = [
+            s
+            for s in soup.package.manifest
+            if type(s) == bs4.element.Tag
+            and "application/xhtml" in s["media-type"]
+            and (s["id"] in spine_ids)
+        ]
+        logger.debug(f"Found {len(hrefs)} hrefs")
+        result = {}
+        fixed_paths = {}
+        for h in hrefs:
+            final_href = h["href"]
+            if not pathlib.Path(root_dir / final_href).exists():
+                path = [r for r in root_dir.rglob(f"{h['href'].split('/')[-1]}")][0]
+                final_href = str(path.relative_to(root_dir))
+                fixed_paths[h["href"]] = final_href
+            result[final_href] = spine_index[h["id"]]
+
+        return result, fixed_paths
+
+
+def process_calibre_epub(
+    book_calibre_epub: pathlib.Path, book_id: int, highlights: List[db.KoboHighlight]
+) -> List[db.CalibreHighlight]:
+    """Process a calibre epub file and return a list of highlights."""
+    result = []
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        with zipfile.ZipFile(book_calibre_epub, "r") as zip_ref:
+            zip_ref.extractall(tmpdirname)
+
+            try:
+                spine_index_map, fixed_path = get_spine_index_map(
+                    pathlib.Path(tmpdirname)
+                )
+
+                logger.debug(f"Spine index map: {spine_index_map}")
+
+                count = 0
+                for i, h in enumerate(highlights):
+                    if h.content_path in fixed_path:
+                        highlights[i] = highlights[i]._replace(
+                            content_path=fixed_path[h.content_path]
+                        )
+                    calibre_highlight = parse_kobo_highlights(
+                        tmpdirname, h, book_id, spine_index_map
+                    )
+                    if calibre_highlight:
+                        result.append(calibre_highlight)
+                        logger.debug(f"Found highlight: {calibre_highlight}")
+                        count += 1
+                logger.debug(f"..found {count} highlights")
+            except Exception as e:
+                logger.error(
+                    f"..failed to convert the highlights: {e} "
+                    f"book: {book_calibre_epub}"
+                )
+    return result
+
 
 def get_prev_sentences_offset(node, n_sentences_offset) -> int:
+    """Get the offset of the previous n sentences."""
     logger.debug(
         "Getting prev sentences offset, node: %s, offset: %d", node, n_sentences_offset
     )
@@ -34,6 +123,7 @@ def get_prev_sentences_offset(node, n_sentences_offset) -> int:
 
 
 def encode_cfi(target_node, target_offset) -> str:
+    """Encode a CFI for calibre."""
     logger.debug(
         "Encoding CFI, target_node: %s, target_offset: %s", target_node, target_offset
     )
@@ -73,7 +163,8 @@ def encode_cfi(target_node, target_offset) -> str:
 
 def parse_kobo_highlights(
     book_prefix, highlight, book_id, spine_index_map
-) -> Optional[CalibreHighlight]:
+) -> Optional[db.CalibreHighlight]:
+    """Parse a kobo highlight and return a calibre highlight."""
     kobo_n_tag_start, kobo_n_sentence_start = [
         int(i) for i in highlight.start_path.split("\\.")[1:]
     ]
@@ -109,6 +200,7 @@ def parse_kobo_highlights(
 
             if (
                 not isinstance(child, bs4.element.NavigableString)
+                or isinstance(child, bs4.element.Comment)
                 or str(child) == "\n"
                 or str(child) == " "
                 or str(child) == "\u00A0"  # non-breaking space, used in the tables
@@ -116,12 +208,7 @@ def parse_kobo_highlights(
             ):
                 continue
 
-            if "30_rm_draft-3-4" in str(input_filename):
-                logger.debug(
-                    f"input_filename: {input_filename}\n"
-                    f"n_tag: {n_tag}\n"
-                    f"child: {child}"
-                )
+            logger.debug(f"Including tag #{n_tag}: {child}")
 
             if n_tag == kobo_n_tag_start:
                 target_start_node = (str(child), child)
