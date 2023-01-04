@@ -1,6 +1,6 @@
 # kobo2Calibre
 
-Embed highlights from Kobo device in Calibre book. Tested on the books converted using [calibre-kobo-driver](https://github.com/jgoguen/calibre-kobo-driver).
+Embed highlights from Kobo device in Calibre book. Tested on the books converted using [calibre-kobo-driver](https://github.com/jgoguen/calibre-kobo-driver). Books converted using a different tool will most probably not work.
 
 The plugin will:
 
@@ -12,22 +12,22 @@ The plugin will:
 
 Check the releases section, and download the latest `Kobo2Calibre.zip`. Install it as any other Calibre plugin. Make sure to add the plugin to `toolbar when a device is connected`.
 
-# installation for CLI usage
+# Installation for CLI usage
 
-The script itself doesn't have dependencies, but if you want to contribute, you can use `poetry install` to install all the dev dependencies:
+You can use `poetry install` to install all the dependencies:
 
 ```bash
 poetry update && poetry install
 ```
 
-## Usage
+## Usage of CLI
 
 **Warning: this script is in the alpha stage; please back up your Calibre library before using it!**
 
 Example:
 
 ```bash
-poetry run python parse_kobo_highlights.py {PATH_TO_KOBO_DEVICE} {PATH_TO_CALIBRE_LIBRARY}
+poetry run python kobo2calibre.py {PATH_TO_KOBO_DEVICE} {PATH_TO_CALIBRE_LIBRARY}
 ```
 
 For the complete list of arguments run:
