@@ -48,6 +48,9 @@ def main(args) -> None:
             logger.debug(f"Failed to match book and skipping it: {volume}")
             continue
 
+        if args.filter_bookname and args.filter_bookname not in volume:
+            continue
+
         logger.debug(f"Processing book: {volume}")
 
         book_calibre_path = pathlib.Path(args.calibre_library) / pathlib.Path(
@@ -73,6 +76,12 @@ if __name__ == "__main__":
         "calibre_library",
         type=str,
         help="Full path to the Calibre library",
+    )
+    parser.add_argument(
+        "--filter_bookname",
+        type=str,
+        help="Filter only books matching a filter",
+        required=False,
     )
     parser.add_argument("--debug", "-vv", action="store_true")
     args = parser.parse_args()

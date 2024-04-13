@@ -31,7 +31,7 @@ def get_spine_index_map(
     root_dir: pathlib.Path,
 ) -> Tuple[Dict[str, int], Dict[str, str]]:
     """Get the spine index map from the content.opf file."""
-    content_file = [f for f in root_dir.rglob("content.opf")][0]
+    content_file = [f for f in root_dir.rglob("*.opf")][0]
     with open(str(content_file)) as f:
         soup = bs4.BeautifulSoup(f.read(), "html.parser")
 
@@ -85,6 +85,7 @@ def process_calibre_epub(
 
                 count = 0
                 for i, h in enumerate(highlights):
+
                     if h.content_path in fixed_path:
                         highlights[i] = highlights[i]._replace(
                             content_path=fixed_path[h.content_path]
@@ -178,6 +179,15 @@ def parse_kobo_highlights(
     logger.debug(f"Text: {highlight.text}")
 
     input_filename = pathlib.Path(book_prefix) / pathlib.Path(highlight.content_path)
+
+    # That's a dirty hack
+    if not pathlib.Path(input_filename).is_file():
+        highlight = highlight._replace(
+            content_path=highlight.content_path.replace("/", "!")
+        )
+        input_filename = pathlib.Path(book_prefix) / pathlib.Path(
+            highlight.content_path
+        )
 
     with open(input_filename) as f:
         soup = BeautifulSoup(f.read(), "html.parser")

@@ -15,7 +15,7 @@ warn_unused_ignores = true
 disable_error_code = ["var-annotated"]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.11"
+python = ">=3.10"
 mypy = "0.910"
 black = "^22.12.0"
 beautifulsoup4 = "^4.11.1"
