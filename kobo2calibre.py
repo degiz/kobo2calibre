@@ -41,12 +41,13 @@ def main(args) -> None:
     to_insert = []
     for volume, highlights in db.get_dictinct_highlights_from_kobo(kobo_db).items():
 
-        likely_book_id, likely_book_path = db.get_likely_book_path_from_calibre(
-            calibre_db, pathlib.Path(args.kobo_volume), volume
-        )
-        if not likely_book_path:
-            logger.debug(f"Failed to match book and skipping it: {volume}")
-            continue
+        # likely_book_id, likely_book_path = db.get_likely_book_path_from_calibre(
+        #     calibre_db, pathlib.Path(args.kobo_volume), volume
+        # )
+        # if not likely_book_path:
+        #     logger.debug(f"Failed to match book and skipping it: {volume}")
+        #     continue
+        likely_book_id, likely_book_path = db.get_book_path_by_title(calibre_db, volume)
 
         if args.filter_bookname and args.filter_bookname not in volume:
             continue

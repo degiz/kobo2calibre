@@ -58,6 +58,22 @@ def get_likely_book_path_from_calibre(
     return book_id, book_path
 
 
+def get_book_path_by_title(
+    calibre_db_path: pathlib.Path, title: str
+) -> Tuple[int, str]:
+    """Get the likely book path from the calibre db."""
+    con = sqlite3.connect(calibre_db_path)
+    cur = con.cursor()
+
+    book_id = cur.execute(f"SELECT id FROM books WHERE title = '{title}'").fetchone()[0]
+    book_path = cur.execute(
+        f"SELECT path FROM books WHERE title = '{title}'"
+    ).fetchone()[0]
+    con.close()
+
+    return book_id, book_path
+
+
 def get_dictinct_highlights_from_kobo(
     input_kobo_db: pathlib.Path,
 ) -> Dict[str, List[KoboHighlight]]:
@@ -68,25 +84,33 @@ def get_dictinct_highlights_from_kobo(
     result = {}
     for distinct_name in cur.execute("SELECT DISTINCT `VolumeID` FROM `Bookmark`"):
         name = distinct_name[0]
-        if name not in result:
-            result[name] = []
+
+        cur_x = con.cursor()
+        title = cur_x.execute(
+            "SELECT title from `tolino_contentItem` where uuid = ?", (name,)
+        ).fetchone()[0]
+        # if title:
+        #     title = title.split("/")[-1].replace("+", " ")
+        cur_x.close()
+
+        # skip name if it looks like a UUID
+        # if len(name) == 36 and "-" in name:
+        #     continue
+
+        if title not in result:
+            result[title] = []
 
         cur1 = con.cursor()
         for row in cur1.execute(
             f"SELECT * FROM `Bookmark` WHERE `VolumeID` = '{name}' AND text !=''"
         ):
-            content_path = row[2].split("epub!")[-1]
-            content_path = content_path.lstrip("!")
-            content_path = content_path.replace("!", "/")
-            if "#" in content_path:
-                content_path = content_path.split("#")[-2]
-            if not content_path:
-                continue
+            # get content path from CFI like OPS/ch1-3.xhtml#point(/1/4/2/3/1:0)
+            content_path = row[3].split("#")[0]
 
             highlight = KoboHighlight(
                 row[3], row[6], row[5], row[8], row[9], content_path
             )
-            result[name].append(highlight)
+            result[title].append(highlight)
 
     con.close()
     return result
