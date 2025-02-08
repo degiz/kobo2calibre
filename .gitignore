@@ -6,6 +6,7 @@ poetry.lock
 __pycache__
 .mypy_cache
 
+.vscode
 .DS_Store
 **.sqlite*
 *.org

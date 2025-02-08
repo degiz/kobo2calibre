@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import bs4
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 try:
     # For calibre gui plugin
@@ -296,3 +296,161 @@ def parse_kobo_highlights(
             highlight.text,
         )
         return calibre_highlight
+
+
+def decode_calibre_cfi(
+    soup: BeautifulSoup, cfi: str
+) -> (bs4.element.NavigableString, int):
+    """
+    Decodes a Calibre CFI string and returns the target NavigableString and its character offset.
+
+    The Calibre CFI format is expected to have slash-separated segments.
+    The intermediate segments (e.g. /2/4/2[id1]/4) are encoded using even numbers.
+    The final segment is of the form '/<node_index>:<offset>', where node_index is counted among
+    all children (including non-tags), starting at 1.
+    """
+
+    parts = cfi.strip().split("/")
+    if len(parts) < 2:
+        raise ValueError("Invalid CFI string")
+
+    current_node = soup.html
+    # Process all intermediate segments (ignoring the final one)
+    # We start from "2", because above we already set current_node to soup.html
+    for part in parts[2:-1]:
+        # Remove any square-bracket annotation (e.g. [id1])
+        m = re.match(r"(\d+)", part)
+        if not m:
+            raise ValueError(f"Invalid segment in CFI: '{part}'")
+        num = int(m.group(1))
+        # In the encoding for parents an even number was used.
+        # The Calibre algorithm started counting at 2 and incremented by 2.
+        # To invert that, we subtract 2 then divide by 2.
+        child_index = (num // 2) - 1
+        # Only consider Tag children (as in the original encode)
+        children = [
+            child
+            for child in current_node.children
+            if isinstance(child, bs4.element.Tag)
+        ]
+
+        print(
+            f"Processing segment '{part}': current_node={current_node.name}, children_count={len(children)}, child_index={child_index}"
+        )
+
+        if child_index < 0 or child_index >= len(children):
+            raise IndexError("Child index out of bounds while decoding CFI")
+        current_node = children[child_index]
+
+    children = [
+        child for child in current_node.children if isinstance(child, bs4.element.Tag)
+    ]
+    print(f"current_node={current_node.name}, children_count={len(children)}")
+
+    # Process final segment, expected format: e.g. "1:78"
+    final_segment = parts[-1]
+    m = re.match(r"(\d+):(\d+)", final_segment)
+    if not m:
+        raise ValueError("Invalid final segment in CFI: " + final_segment)
+    sibling_number = int(m.group(1))
+    offset = int(m.group(2))
+    # For the final segment, we use the parent’s full list of children (including strings)
+    siblings = list(current_node.children)
+    if sibling_number < 1 or sibling_number > len(siblings):
+        raise IndexError("Sibling index out of bounds in final segment")
+    target_node = siblings[sibling_number - 1]
+    if not isinstance(target_node, bs4.element.NavigableString):
+        raise ValueError("Target node is not a text node")
+    return target_node, offset
+
+
+def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
+    """
+    Converts a Calibre CFI to a Kobo reader CFI.
+
+    Returns a tuple:
+      (kobo_path, kobo_offset)
+    where:
+      kobo_path: a string of the form "span#kobo\.{n_tag}\.{n_sentence}"
+      kobo_offset: the character offset within the given sentence.
+    """
+    # Decode the Calibre CFI first to obtain the target text node and overall offset
+    target_node, overall_offset = decode_calibre_cfi(soup, cfi)
+
+    # Traverse the document to get the Kobo text node index.
+    # This simulates the original Kobo conversion where only non-empty text nodes (ignoring whitespace,
+    # newlines, &#160; etc.) are counted.
+    n_tag = 1
+    found = False
+    # For Kobo, we start with the body tag right away
+    for child in soup.body.descendants:
+        # Skip non-text nodes, comments, or nodes with only whitespace.
+        if not isinstance(child, bs4.element.NavigableString) or isinstance(
+            child, bs4.element.Comment
+        ):
+            continue
+        text = str(child)
+        if text in ("\n", " ", "\u00A0") or text.strip() == "":
+            continue
+        # You may want to further exclude nodes that are within a <figure> (as in your original code)
+        parent_names = [p.name for p in child.parents if isinstance(p, bs4.element.Tag)]
+        if "figure" in parent_names:
+            continue
+
+        if child == target_node:
+            found = True
+            break
+        n_tag += 1
+
+    if not found:
+        raise ValueError("Target text node not found among the valid text nodes")
+
+    # Now, using the text content, split it into sentences.
+    # The logic here mimics your get_prev_sentences_offset: it traverses the list
+    # of sentences until the cumulative length exceeds overall_offset.
+    sentences = [seg for seg in REGEX_KTE.split(str(target_node)) if seg != ""]
+    cumulative = 0
+    kobo_sentence = 1
+    kobo_offset = 0
+    for sentence in sentences:
+        if cumulative + len(sentence) > overall_offset:
+            kobo_offset = overall_offset - cumulative
+            break
+        cumulative += len(sentence)
+        kobo_sentence += 1
+    else:
+        # In case the overall_offset is greater than the total length
+        kobo_offset = overall_offset - cumulative
+
+    # Construct the Kobo path.
+    # The standard format (as derived from your original Kobo example) is:
+    #   "span#kobo\.{n_tag}\.{n_sentence}"
+    # Use double escapes for the dots.
+    kobo_path = f"span#kobo\\.{n_tag}\\.{kobo_sentence}"
+
+    return kobo_path, kobo_offset
+
+
+# Example usage:
+if __name__ == "__main__":
+
+    with open("/Users/degiz/Desktop/epub/OPS/ch1-6.xhtml", "r", encoding="utf-8") as f:
+        soup = BeautifulSoup(f.read(), "html.parser")
+
+    # Example Calibre CFI values taken from your example:
+    calibre_start_cfi = "/2/4/2/2/4/1:2315"
+    calibre_end_cfi = "/2/4/2/2/4/1:2408"
+
+    # Convert the Calibre start CFI to Kobo format
+    kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
+        soup, calibre_start_cfi
+    )
+    print("Kobo Start CFI:")
+    print("Path:", kobo_start_path)
+    print("Offset:", kobo_start_offset)
+
+    # Convert the Calibre end CFI to Kobo format
+    kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(soup, calibre_end_cfi)
+    print("\nKobo End CFI:")
+    print("Path:", kobo_end_path)
+    print("Offset:", kobo_end_offset)
