@@ -11,6 +11,8 @@ from typing import Dict, List, Optional, Tuple
 import bs4
 from bs4 import BeautifulSoup, NavigableString
 
+from db import KoboTargetHighlight
+
 try:
     # For calibre gui plugin
     from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
@@ -29,7 +31,7 @@ REGEX_KTE = re.compile(
 
 def get_spine_index_map(
     root_dir: pathlib.Path,
-) -> Tuple[Dict[str, int], Dict[str, str]]:
+) -> Tuple[Dict[str, int], Dict[str, str], str]:
     """Get the spine index map from the content.opf file."""
     content_file = [f for f in root_dir.rglob("*.opf")][0]
     with open(str(content_file)) as f:
@@ -64,12 +66,21 @@ def get_spine_index_map(
                 fixed_paths[h["href"]] = final_href
             result[final_href] = spine_index[h["id"]]
 
-        return result, fixed_paths
+        p = str(pathlib.Path(content_file).relative_to(root_dir))
+        logger.debug(f"relative path: {p}")
+
+        return (
+            result,
+            fixed_paths,
+            str(pathlib.Path(content_file).relative_to(root_dir)),
+        )
 
 
-def process_calibre_epub(
-    book_calibre_epub: pathlib.Path, book_id: int, highlights: List[db.KoboHighlight]
-) -> List[db.CalibreHighlight]:
+def process_calibre_epub_from_kobo(
+    book_calibre_epub: pathlib.Path,
+    book_id: int,
+    highlights: List[db.KoboSourceHighlight],
+) -> List[db.CalibreTargetHighlight]:
     """Process a calibre epub file and return a list of highlights."""
     result = []
     with tempfile.TemporaryDirectory() as tmpdirname:
@@ -77,7 +88,7 @@ def process_calibre_epub(
             zip_ref.extractall(tmpdirname)
 
             try:
-                spine_index_map, fixed_path = get_spine_index_map(
+                spine_index_map, fixed_path, _ = get_spine_index_map(
                     pathlib.Path(tmpdirname)
                 )
 
@@ -90,12 +101,12 @@ def process_calibre_epub(
                         highlights[i] = highlights[i]._replace(
                             content_path=fixed_path[h.content_path]
                         )
-                    calibre_highlight = parse_kobo_highlights(
+                    calibre_target_highlight = parse_kobo_highlights(
                         tmpdirname, h, book_id, spine_index_map
                     )
-                    if calibre_highlight:
-                        result.append(calibre_highlight)
-                        logger.debug(f"Found highlight: {calibre_highlight}")
+                    if calibre_target_highlight:
+                        result.append(calibre_target_highlight)
+                        logger.debug(f"Found highlight: {calibre_target_highlight}")
                         count += 1
                 logger.debug(f"..found {count} highlights")
             except Exception as e:
@@ -104,6 +115,100 @@ def process_calibre_epub(
                     f"book: {book_calibre_epub}"
                 )
     return result
+
+
+def process_calibre_epub_from_calibre(
+    book_calibre_epub: pathlib.Path,
+    kobo_lpath: str,
+    highlights: List[db.CalibreSourceHighlight],
+):
+    """Process a calibre epub file and return a list of highlights."""
+    result = []
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        with zipfile.ZipFile(book_calibre_epub, "r") as zip_ref:
+            zip_ref.extractall(tmpdirname)
+
+            _, _, content_file = get_spine_index_map(pathlib.Path(tmpdirname))
+            slash_count = content_file.count("/")
+
+            for h in highlights:
+                logger.debug(f"Processing spine: {h.spine_name}")
+                if not h.spine_name:
+                    logger.debug(
+                        f"Skipping highlight without spine: {h.highlighted_text}"
+                    )
+                soup = BeautifulSoup(
+                    open(pathlib.Path(tmpdirname) / pathlib.Path(h.spine_name)),
+                    "html.parser",
+                )
+
+                # Get text of <h1> tag
+                text = soup.h1.get_text() if soup.h1 else ""
+
+                kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
+                    soup, h.start_cfi
+                )
+                kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(
+                    soup, h.end_cfi
+                )
+                logger.debug(f"Calibre CFI: {h.start_cfi}, {h.end_cfi}")
+                logger.debug(
+                    f"Kobo CFI: {kobo_start_path}, offset: {kobo_start_offset}, {kobo_end_path}, offset: {kobo_end_offset}"
+                )
+                logger.debug(f"Text: {h.highlighted_text}")
+
+                unique_uuid = str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_DNS,
+                        f"{h.start_cfi}*{h.end_cfi}*{h.highlighted_text})",
+                    ).hex
+                )
+
+                if slash_count > 0:
+                    adapted_spinename = h.spine_name.replace("/", "!", slash_count)
+                else:
+                    adapted_spinename = f"!{h.spine_name}"
+
+                kobo_highlight = KoboTargetHighlight(
+                    kobo_start_path,
+                    kobo_end_path,
+                    kobo_start_offset,
+                    kobo_end_offset,
+                    h.highlighted_text,
+                    f"file:///mnt/onboard/{kobo_lpath}",
+                    f"/mnt/onboard/{kobo_lpath}!{adapted_spinename}",
+                    calibre_color_to_kobo_color(h.color),
+                    unique_uuid,
+                )
+                result.append(kobo_highlight)
+
+    return result
+
+
+def calibre_color_to_kobo_color(color: str) -> int:
+    """Convert a calibre color to a kobo color."""
+    if color == "green":
+        return 3
+    if color == "yellow":
+        return 0
+    if color == "blue":
+        return 2
+    if color == "purple":
+        return 1
+    return 0
+
+
+def kobo_color_to_calibre_color(color: int) -> str:
+    """Convert a kobo color to a calibre color."""
+    if color == 3:
+        return "green"
+    if color == 0:
+        return "yellow"
+    if color == 2:
+        return "blue"
+    if color == 1:
+        return "purple"
+    return "yellow"
 
 
 def get_prev_sentences_offset(node, n_sentences_offset) -> int:
@@ -164,7 +269,7 @@ def encode_cfi(target_node, target_offset) -> str:
 
 def parse_kobo_highlights(
     book_prefix, highlight, book_id, spine_index_map
-) -> Optional[db.CalibreHighlight]:
+) -> Optional[db.CalibreTargetHighlight]:
     """Parse a kobo highlight and return a calibre highlight."""
     kobo_n_tag_start, kobo_n_sentence_start = [
         int(i) for i in highlight.start_path.split("\\.")[1:]
@@ -191,6 +296,8 @@ def parse_kobo_highlights(
 
     with open(input_filename) as f:
         soup = BeautifulSoup(f.read(), "html.parser")
+
+        chapter_title = guess_chapter_title(soup)
 
         # First find the node using KOBO notation
         target_start_node = None
@@ -278,13 +385,18 @@ def parse_kobo_highlights(
             "highlighted_text": highlight.text,
             "spine_index": spine_index_map[highlight.content_path],
             "spine_name": highlight.content_path,
-            "style": {"kind": "color", "type": "builtin", "which": "green"},
+            "style": {
+                "kind": "color",
+                "type": "builtin",
+                "which": kobo_color_to_calibre_color(highlight.color),
+            },
+            "toc_family_titles": [chapter_title],
             "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "type": "highlight",
             "uuid": unique_uuid,
         }
 
-        calibre_highlight = db.CalibreHighlight(
+        calibre_highlight = db.CalibreTargetHighlight(
             book_id,
             "EPUB",
             "local",
@@ -334,7 +446,7 @@ def decode_calibre_cfi(
             if isinstance(child, bs4.element.Tag)
         ]
 
-        print(
+        logger.debug(
             f"Processing segment '{part}': current_node={current_node.name}, children_count={len(children)}, child_index={child_index}"
         )
 
@@ -345,7 +457,7 @@ def decode_calibre_cfi(
     children = [
         child for child in current_node.children if isinstance(child, bs4.element.Tag)
     ]
-    print(f"current_node={current_node.name}, children_count={len(children)}")
+    logger.debug(f"current_node={current_node.name}, children_count={len(children)}")
 
     # Process final segment, expected format: e.g. "1:78"
     final_segment = parts[-1]
@@ -431,26 +543,28 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
     return kobo_path, kobo_offset
 
 
-# Example usage:
-if __name__ == "__main__":
+def guess_chapter_title(soup):
 
-    with open("/Users/degiz/Desktop/epub/OPS/ch1-6.xhtml", "r", encoding="utf-8") as f:
-        soup = BeautifulSoup(f.read(), "html.parser")
+    # 2. Look for <h1> as it's common for chapter headings
+    h1 = soup.find("h1")
+    if h1 and h1.get_text():
+        h1_text = h1.get_text().strip()
+        if h1_text:
+            return h1_text
 
-    # Example Calibre CFI values taken from your example:
-    calibre_start_cfi = "/2/4/2/2/4/1:2315"
-    calibre_end_cfi = "/2/4/2/2/4/1:2408"
+    # 3. Look for <h2>, sometimes chapters are marked with h2
+    h2 = soup.find("h2")
+    if h2 and h2.get_text():
+        h2_text = h2.get_text().strip()
+        if h2_text:
+            return h2_text
 
-    # Convert the Calibre start CFI to Kobo format
-    kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
-        soup, calibre_start_cfi
-    )
-    print("Kobo Start CFI:")
-    print("Path:", kobo_start_path)
-    print("Offset:", kobo_start_offset)
+    # 4. As a fallback, try to see if there's a div with a class indicating chapter title
+    possible_titles = soup.find_all("div", class_="chapter-title")
+    for div in possible_titles:
+        text = div.get_text().strip()
+        if text:
+            return text
 
-    # Convert the Calibre end CFI to Kobo format
-    kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(soup, calibre_end_cfi)
-    print("\nKobo End CFI:")
-    print("Path:", kobo_end_path)
-    print("Offset:", kobo_end_offset)
+    # If no title is guessed, return a default notice
+    return "Chapter title not found."

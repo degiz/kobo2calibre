@@ -59,12 +59,48 @@ def main(args) -> None:
         book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
 
         to_insert.extend(
-            converter.process_calibre_epub(
+            converter.process_calibre_epub_from_kobo(
                 book_calibre_epub, likely_book_id, highlights
             )
         )
 
+        if not args.both_ways:
+            continue
+        calibre_highlights = db.get_highlights_from_calibre_by_book_id(
+            calibre_db, likely_book_id
+        )
+        logger.debug(
+            f"Book {volume} has {len(calibre_highlights)} highlights in calibre"
+        )
+
     db.insert_highlights_into_calibre(calibre_db, to_insert)
+
+    if not args.both_ways:
+        return
+    highlights = db.get_distinct_highlights_from_calibre(calibre_db)
+    logger.debug(f"Calibre has {len(highlights)} books with highlights")
+
+    to_insert = []
+    for book_id, highlights in highlights.items():
+        book_path = db.get_likely_book_path_from_calibre_by_id(calibre_db, book_id)
+        if args.filter_bookname and args.filter_bookname not in book_path:
+            continue
+
+        book_calibre_path = pathlib.Path(args.calibre_library) / pathlib.Path(book_path)
+        book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
+        kobo_lpath = db.get_kobo_content_path_by_book_id(
+            pathlib.Path(args.kobo_volume), book_id
+        )
+
+        logger.debug(f"Processing book: {book_calibre_epub}")
+
+        to_insert.extend(
+            converter.process_calibre_epub_from_calibre(
+                book_calibre_epub, kobo_lpath, highlights
+            )
+        )
+
+    db.insert_highlights_into_kobo(kobo_db, to_insert)
 
 
 if __name__ == "__main__":
@@ -76,6 +112,11 @@ if __name__ == "__main__":
         "calibre_library",
         type=str,
         help="Full path to the Calibre library",
+    )
+    parser.add_argument(
+        "--both_ways",
+        action="store_true",
+        required=False,
     )
     parser.add_argument(
         "--filter_bookname",
