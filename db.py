@@ -237,7 +237,7 @@ def get_highlights_from_kobo_by_book(
             continue
 
         highlight = KoboSourceHighlight(
-            row[3], row[6], row[5], row[8], row[9], content_path
+            row[3], row[6], row[5], row[8], row[9], content_path, row[24]
         )
         result.append(highlight)
 
@@ -343,7 +343,6 @@ def insert_highlights_into_kobo(
                 datetime.now().isoformat(),
                 datetime.now().isoformat(),
                 "highlight",
-                # "ac93e85f-6c06-47b0-a492-7bdfaada4386",
             ),
         )
 

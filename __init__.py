@@ -11,7 +11,7 @@ class Kobo2Calibre(InterfaceActionBase):
     description = "Embed highlights from Kobo device into matching books in Calibre"
     supported_platforms = ["windows", "osx", "linux"]
     author = "Alexander Khizov"
-    version = (0, 1, 0)
+    version = (0, 3, 0)
     minimum_calibre_version = (6, 10, 0)
 
     actual_plugin = "calibre_plugins.kobo2calibre.plugin:Kobo2CalibrePlugin"

@@ -12,7 +12,10 @@ try:
     )
     from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
 except ImportError:
-    # For cli
+    # For local calibre debug
+    import sys, os
+
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     import converter  # type: ignore
     import db  # type: ignore
 
@@ -41,7 +44,10 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             )
             return
 
-        self.to_process = self._process_selected_rows()
+        (
+            self.to_process_from_kobo,
+            self.to_process_from_calibre,
+        ) = self._process_selected_rows()
         self._show_info_widget()
 
     def _abort(self, message: str) -> None:
@@ -66,7 +72,7 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             for warning in self.warnings:
                 layout.addWidget(QtWidgets.QLabel(f"• {warning}"))
         buttons = None
-        if self.to_process:
+        if self.to_process_from_kobo:
             layout.addWidget(QtWidgets.QLabel("\nProceed?"))
             buttons = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.StandardButton.Ok
@@ -86,22 +92,39 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         self.setLayout(layout)
 
     def _do_import(self) -> None:
-        to_insert = []
-        for book, highlights in self.to_process:
-            to_insert.extend(
-                converter.process_calibre_epub(book[2], book[1], highlights)
+
+        to_insert_from_kobo = []
+        for book, highlights in self.to_process_from_kobo:
+            to_insert_from_kobo.extend(
+                converter.process_calibre_epub_from_kobo(book[2], book[1], highlights)
             )
-        n_inserted = db.insert_highlights_into_calibre(
-            self._calibre_db_path(), to_insert
+        n_inserted_from_kobo = db.insert_highlights_into_calibre(
+            self._calibre_db_path(), to_insert_from_kobo
         )
+
+        to_insert_from_calibre = []
+        for book, highlights in self.to_process_from_calibre:
+            kobo_lpath = db.get_kobo_content_path_by_book_id(
+                self._kobo_mount_prefix(), book[1]
+            )
+            to_insert_from_calibre.extend(
+                converter.process_calibre_epub_from_calibre(
+                    book[2], kobo_lpath, highlights
+                )
+            )
+        n_inserted_from_calibre = db.insert_highlights_into_kobo(
+            self._kobo_db_path(), to_insert_from_calibre
+        )
+
         self.accept()
         QtWidgets.QMessageBox.information(
             self,
             "Kobo2Calibre",
-            f"Inserted {n_inserted} highlights into calibre",
+            f"Inserted {n_inserted_from_kobo} highlights into calibre and "
+            f"{n_inserted_from_calibre} highlights into Kobo",
         )
 
-    def _process_selected_rows(self) -> List[Tuple[Any, Any]]:
+    def _process_selected_rows(self):
 
         # We're in library view
         calibre_books, books_with_no_epubs = self._get_books_from_selected_rows()
@@ -119,20 +142,33 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             )
             return []
 
-        result = []
+        result_from_kobo = []
+        result_from_calibre = []
         for book in calibre_books:
+            print(f"Processing book: {book}")
             if not book[3]:
                 self.warnings.append(
                     f'Book "{book[0]}" has no matching kepub, and was not processed'
                 )
                 continue
-            highlights = db.get_highlights_from_kobo_by_book(
+            highlights_from_kobo = db.get_highlights_from_kobo_by_book(
                 self._kobo_db_path(), book[3]
             )
-            self.info.append(f'Book "{book[0]}" has {len(highlights)} highlights')
-            result.append((book, highlights))
+            self.info.append(
+                f'Book "{book[0]}" has {len(highlights_from_kobo)} highlights in Kobo'
+            )
+            result_from_kobo.append((book, highlights_from_kobo))
 
-        return result
+            # Now process the other way
+            highlights_from_calibre = db.get_highlights_from_calibre_by_book_id(
+                self._calibre_db_path(), book[1]
+            )
+            result_from_calibre.append((book, highlights_from_calibre))
+            self.info.append(
+                f'Book "{book[0]}" has {len(highlights_from_calibre)} highlights in Calibre'
+            )
+
+        return result_from_kobo, result_from_calibre
 
     def _get_books_from_selected_rows(self) -> Tuple[List[Any], List[str]]:
 
@@ -171,6 +207,9 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             / ".kobo"
             / "KoboReader.sqlite"
         )
+
+    def _kobo_mount_prefix(self) -> Path:
+        return Path(self.gui.device_manager.connected_device._main_prefix)
 
     def _calibre_db_path(self) -> Path:
         return Path(self.gui.library_view.model().db.dbpath)

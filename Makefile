@@ -11,6 +11,9 @@ build:
 run:
 	calibre-customize -b $(shell pwd); calibre
 
+debug:
+	calibre-customize -b $(shell pwd); calibre-debug -g
+
 test:
 	flake8 .
 	rm -rf .mypy_cache && mypy . --explicit-package-bases --namespace-packages

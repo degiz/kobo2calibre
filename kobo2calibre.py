@@ -64,15 +64,6 @@ def main(args) -> None:
             )
         )
 
-        if not args.both_ways:
-            continue
-        calibre_highlights = db.get_highlights_from_calibre_by_book_id(
-            calibre_db, likely_book_id
-        )
-        logger.debug(
-            f"Book {volume} has {len(calibre_highlights)} highlights in calibre"
-        )
-
     db.insert_highlights_into_calibre(calibre_db, to_insert)
 
     if not args.both_ways:
