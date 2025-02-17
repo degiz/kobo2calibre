@@ -1,12 +1,13 @@
 # kobo2Calibre
 
-Embed highlights from Kobo device in Calibre book. Tested on the books converted using [calibre-kobo-driver](https://github.com/jgoguen/calibre-kobo-driver). Books converted using a different tool will most probably not work.
+Embed highlights from Kobo device in Calibre book, and wise-versa. Tested on the books converted using [calibre-kobo-driver](https://github.com/jgoguen/calibre-kobo-driver). Books converted using a different tool will most probably not work.
 
 The plugin will:
 
 - import your highlights from the Kobo device DB
 - try to match the highlights with books from your Calibre library
 - insert highlights into the Calibre database so that you can further edit them using a fantastic Calibre book viewer
+- and the same the other way around
 
 # Installation as Calibre plugin
 
@@ -38,5 +39,4 @@ poetry run python kobo2calibre.py --help
 
 # Screenshots
 
-![Kobo screenshot](/screenshots/screen_kobo.png "Kobo screenshot")
-![Calibre screenshot](/screenshots/screen_calibre.png "Calibre screenshot")
+![Screenshot](/screenshots/image.jpg "Screenshot")
