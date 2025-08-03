@@ -223,7 +223,9 @@ def get_prev_sentences_offset(node, n_sentences_offset) -> int:
 
     prev_sentences_offset = 0
     if n_sentences_offset > 1:
-        for i in range(0, n_sentences_offset - 1):
+        # Ensure we don't go beyond the available sentences
+        max_sentences = min(n_sentences_offset - 1, len(sentences))
+        for i in range(0, max_sentences):
             prev_sentences_offset += len(sentences[i])
     return prev_sentences_offset
 
@@ -320,7 +322,7 @@ def parse_kobo_highlights(
                 or isinstance(child, bs4.element.Comment)
                 or str(child) == "\n"
                 or str(child) == " "
-                or str(child) == "\u00A0"  # non-breaking space, used in the tables
+                or str(child) == "\u00a0"  # non-breaking space, used in the tables
                 or str(child).strip() == ""
             ):
                 continue
@@ -502,7 +504,7 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
         ):
             continue
         text = str(child)
-        if text in ("\n", " ", "\u00A0") or text.strip() == "":
+        if text in ("\n", " ", "\u00a0") or text.strip() == "":
             continue
         # You may want to further exclude nodes that are within a <figure> (as in your original code)
         parent_names = [p.name for p in child.parents if isinstance(p, bs4.element.Tag)]

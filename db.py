@@ -71,6 +71,7 @@ def get_calibre_book_id(kobo_volume: pathlib.Path, lpath: str) -> int:
 
 def get_kobo_content_path_by_book_id(kobo_volume: pathlib.Path, book_id: int) -> str:
     calibre_device_metadata = kobo_volume.resolve() / "metadata.calibre"
+    logger.debug(f"Looking for book id {book_id} in {calibre_device_metadata}")
     with open(calibre_device_metadata) as f:
         metadata = json.load(f)
         target_book = list(
