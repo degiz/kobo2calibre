@@ -9,19 +9,29 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import bs4
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup
 
 from db import KoboTargetHighlight
 
 try:
     # For calibre gui plugin
     from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
-    from calibre.spell.break_iterator import sentence_positions
 except ImportError:
     # For cli
     import db  # type: ignore
 
+# Try to import calibre's kepubify (available when running via calibre-debug)
+try:
+    from calibre.ebooks.oeb.polish.kepubify import (
+        kepubify_html_data,
+        Options as KepubifyOptions,
+    )
+    from calibre.spell.break_iterator import sentence_positions
+
+    HAS_KEPUBIFY = True
+except ImportError:
     sentence_positions = None  # type: ignore
+    HAS_KEPUBIFY = False
 
 logger = logging.getLogger(__name__)
 
@@ -48,68 +58,93 @@ def split_into_sentences(text: str, lang: str = "en") -> List[str]:
         return [g for g in groups if g != ""]
 
 
-def find_text_by_kobo_path(
-    soup: BeautifulSoup, target_paranum: int, target_sentnum: int, lang: str = "en"
+def get_block_offset_from_kepubify(raw_html: bytes, block_num: int, sentence_num: int) -> Optional[int]:
+    """
+    Use Calibre's kepubify to find the character offset from the start of a block
+    to the start of a specific sentence.
+
+    Returns the offset, or None if the span is not found.
+    """
+    if not HAS_KEPUBIFY:
+        logger.warning("Kepubify not available")
+        return None
+
+    root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+
+    # Sum text lengths of all spans before the target sentence in this block
+    offset = 0
+    for sent in range(1, sentence_num):
+        span_id = f"kobo.{block_num}.{sent}"
+        spans = root.xpath(f'//*[@id="{span_id}"]')
+        if spans:
+            span_text = spans[0].text or ""
+            offset += len(span_text)
+            logger.debug(f"Span {span_id}: len={len(span_text)}, cumulative offset={offset}")
+
+    # Verify the target span exists
+    target_span_id = f"kobo.{block_num}.{sentence_num}"
+    target_spans = root.xpath(f'//*[@id="{target_span_id}"]')
+    if not target_spans:
+        logger.warning(f"Span {target_span_id} not found in kepubified HTML")
+        return None
+
+    logger.debug(f"Found span {target_span_id}, offset from block start: {offset}")
+    return offset
+
+
+def find_text_node_at_block_offset(
+    soup: BeautifulSoup, target_block: int, char_offset: int
 ) -> Optional[Tuple[bs4.element.NavigableString, int]]:
     """
-    Find text node and character offset using Kobo's block-based numbering scheme.
+    Find the text node in the original document that contains the character
+    at the given offset within the specified block.
 
-    Kobo numbers text as kobo.X.Y where:
-    - X = paragraph/block number (increments on entering p, h1-h6, ol, ul, table)
-    - Y = sentence number within that block
-
-    Returns (text_node, char_offset_to_start_of_sentence) or None if not found.
+    Returns (text_node, offset_within_node) or None.
     """
-    # Kobo starts numbering at 2, so we start at 1 to match after first increment
-    paranum = 1
-    increment_next_para = True
+    # Find the Nth block element
+    block_num = 0
+    target_element = None
 
-    for element in soup.body.descendants:
-        # Check if this is a block tag - set flag to increment paranum on next text
-        if isinstance(element, bs4.element.Tag):
-            tagname = element.name.lower() if element.name else ""
-            if tagname in BLOCK_TAGS and not increment_next_para:
-                increment_next_para = True
+    for elem in soup.body.descendants:
+        if isinstance(elem, bs4.element.Tag):
+            tagname = elem.name.lower() if elem.name else ""
+            if tagname in BLOCK_TAGS:
+                block_num += 1
+                if block_num == target_block:
+                    target_element = elem
+                    break
+
+    if target_element is None:
+        logger.warning(f"Block {target_block} not found in document")
+        return None
+
+    # Now find the text node containing the character at char_offset
+    # by iterating through all text descendants of this block
+    cumulative_offset = 0
+    for node in target_element.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
             continue
 
-        # Skip non-text nodes
-        if not isinstance(element, bs4.element.NavigableString):
-            continue
-        if isinstance(element, bs4.element.Comment):
-            continue
+        text = str(node)
+        node_len = len(text)
 
-        text = str(element)
-        # Skip whitespace-only text
-        if text in ("\n", " ", "\u00a0") or text.strip() == "":
-            continue
+        if cumulative_offset + node_len > char_offset:
+            # This node contains our target character
+            offset_in_node = char_offset - cumulative_offset
+            logger.debug(
+                f"Found text node at offset {char_offset}: "
+                f"node_offset={offset_in_node}, text={repr(text[:50])}"
+            )
+            return (node, offset_in_node)
 
-        # Skip text inside figure elements
-        parent_names = [p.name for p in element.parents if hasattr(p, "name")]
-        if "figure" in parent_names:
-            continue
+        cumulative_offset += node_len
 
-        # Increment paragraph counter if we're starting a new block
-        if increment_next_para:
-            paranum += 1
-            increment_next_para = False
-
-        logger.debug(f"Block {paranum}: {repr(text[:50])}...")
-
-        if paranum == target_paranum:
-            # Found the right block, now find the sentence
-            sentences = split_into_sentences(text, lang)
-            if target_sentnum <= len(sentences):
-                # Calculate offset to start of target sentence
-                offset = sum(len(s) for s in sentences[: target_sentnum - 1])
-                return (element, offset)
-            else:
-                logger.warning(
-                    f"Sentence {target_sentnum} not found in block {paranum} "
-                    f"(only {len(sentences)} sentences)"
-                )
-                return None
-
-    logger.warning(f"Block {target_paranum} not found (max was {paranum})")
+    logger.warning(
+        f"Offset {char_offset} not found in block {target_block} "
+        f"(block has {cumulative_offset} chars)"
+    )
     return None
 
 
@@ -421,19 +456,72 @@ def parse_kobo_highlights(
             highlight.content_path
         )
 
-    with open(input_filename) as f:
-        soup = BeautifulSoup(f.read(), "html.parser")
+    with open(input_filename, "rb") as f:
+        raw_html = f.read()
 
-        chapter_title = guess_chapter_title(soup)
+    # For chapter title, we still need BeautifulSoup
+    soup = BeautifulSoup(raw_html, "html.parser")
+    chapter_title = guess_chapter_title(soup)
 
-        # Use the configured kepub format
-        use_new_format = is_new_kepub_format(kepub_format)
-        find_func = find_text_by_kobo_path if use_new_format else find_text_by_kte_path
-        format_name = "new kepubify" if use_new_format else "old KTE"
-        logger.debug(f"Using {format_name} format (kepub_format={kepub_format})")
+    use_new_format = is_new_kepub_format(kepub_format)
 
-        # Find start node
-        start_result = find_func(soup, kobo_n_start, kobo_n_sentence_start)
+    if use_new_format and HAS_KEPUBIFY:
+        # Use Calibre's kepubify to calculate offsets, then find in original doc
+        logger.debug("Using Calibre's kepubify for offset calculation")
+
+        # Get offset from block start to sentence start
+        start_sentence_offset = get_block_offset_from_kepubify(
+            raw_html, kobo_n_start, kobo_n_sentence_start
+        )
+        if start_sentence_offset is None:
+            logger.debug("Failed to find the start sentence offset")
+            return None
+
+        # Total offset = offset to sentence + offset within sentence
+        start_total_offset = start_sentence_offset + highlight.start_offset
+        logger.debug(f"Start: block={kobo_n_start}, sentence_offset={start_sentence_offset}, "
+                     f"highlight_offset={highlight.start_offset}, total={start_total_offset}")
+
+        # Find the text node in the original document
+        # Note: kepubify block N corresponds to original document block N-1
+        # because kepubify consumes block 1 for whitespace at document start
+        original_block_start = kobo_n_start - 1
+        start_result = find_text_node_at_block_offset(soup, original_block_start, start_total_offset)
+        if not start_result:
+            logger.debug("Failed to find start text node in original document")
+            return None
+        target_start_node, start_offset_in_node = start_result
+
+        # Handle end offset
+        original_block_end = kobo_n_end - 1
+        if kobo_n_start == kobo_n_end and kobo_n_sentence_start == kobo_n_sentence_end:
+            # Same sentence - just different offset
+            end_total_offset = start_sentence_offset + highlight.end_offset
+            end_result = find_text_node_at_block_offset(soup, original_block_end, end_total_offset)
+        else:
+            # Different sentence
+            end_sentence_offset = get_block_offset_from_kepubify(
+                raw_html, kobo_n_end, kobo_n_sentence_end
+            )
+            if end_sentence_offset is None:
+                logger.debug("Failed to find the end sentence offset")
+                return None
+            end_total_offset = end_sentence_offset + highlight.end_offset
+            end_result = find_text_node_at_block_offset(soup, original_block_end, end_total_offset)
+
+        if not end_result:
+            logger.debug("Failed to find end text node in original document")
+            return None
+        target_end_node, end_offset_in_node = end_result
+
+        # Generate CFI using the original document structure
+        start_cfi = encode_cfi(target_start_node, start_offset_in_node)
+        end_cfi = encode_cfi(target_end_node, end_offset_in_node)
+    else:
+        # Fallback for old KTE format or when kepubify unavailable
+        logger.debug(f"Using {'old KTE' if not use_new_format else 'fallback'} format")
+
+        start_result = find_text_by_kte_path(soup, kobo_n_start, kobo_n_sentence_start)
         if not start_result:
             logger.debug("Failed to find the target start node")
             return None
@@ -441,24 +529,19 @@ def parse_kobo_highlights(
         target_start_node, sentence_start_offset = start_result
         kobo_target_start_offset = sentence_start_offset + highlight.start_offset
 
-        # Find end node
         if kobo_n_start == kobo_n_end:
-            # Same block/tag
             target_end_node = target_start_node
             if kobo_n_sentence_start == kobo_n_sentence_end:
-                # Same sentence
                 kobo_target_end_offset = sentence_start_offset + highlight.end_offset
             else:
-                # Different sentence in same block/tag
-                end_result = find_func(soup, kobo_n_end, kobo_n_sentence_end)
+                end_result = find_text_by_kte_path(soup, kobo_n_end, kobo_n_sentence_end)
                 if not end_result:
                     logger.debug("Failed to find the target end node")
                     return None
                 _, sentence_end_offset = end_result
                 kobo_target_end_offset = sentence_end_offset + highlight.end_offset
         else:
-            # Different block/tag
-            end_result = find_func(soup, kobo_n_end, kobo_n_sentence_end)
+            end_result = find_text_by_kte_path(soup, kobo_n_end, kobo_n_sentence_end)
             if not end_result:
                 logger.debug("Failed to find the target end node")
                 return None
@@ -468,41 +551,42 @@ def parse_kobo_highlights(
         start_cfi = encode_cfi(target_start_node, kobo_target_start_offset)
         end_cfi = encode_cfi(target_end_node, kobo_target_end_offset)
 
-        unique_uuid = str(
-            uuid.uuid3(
-                uuid.NAMESPACE_DNS, f"{start_cfi}*{end_cfi}*{highlight.text})"
-            ).hex
-        )
+    # Common code for both branches
+    unique_uuid = str(
+        uuid.uuid3(
+            uuid.NAMESPACE_DNS, f"{start_cfi}*{end_cfi}*{highlight.text})"
+        ).hex
+    )
 
-        calibre_highlight_json = {
-            "start_cfi": start_cfi,
-            "end_cfi": end_cfi,
-            "highlighted_text": highlight.text,
-            "spine_index": spine_index_map[highlight.content_path],
-            "spine_name": highlight.content_path,
-            "style": {
-                "kind": "color",
-                "type": "builtin",
-                "which": kobo_color_to_calibre_color(highlight.color),
-            },
-            "toc_family_titles": [chapter_title],
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "type": "highlight",
-            "uuid": unique_uuid,
-        }
+    calibre_highlight_json = {
+        "start_cfi": start_cfi,
+        "end_cfi": end_cfi,
+        "highlighted_text": highlight.text,
+        "spine_index": spine_index_map[highlight.content_path],
+        "spine_name": highlight.content_path,
+        "style": {
+            "kind": "color",
+            "type": "builtin",
+            "which": kobo_color_to_calibre_color(highlight.color),
+        },
+        "toc_family_titles": [chapter_title],
+        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "type": "highlight",
+        "uuid": unique_uuid,
+    }
 
-        calibre_highlight = db.CalibreTargetHighlight(
-            book_id,
-            "EPUB",
-            "local",
-            "viewer",
-            int(time.time()),
-            unique_uuid,
-            "highlight",
-            calibre_highlight_json,
-            highlight.text,
-        )
-        return calibre_highlight
+    calibre_highlight = db.CalibreTargetHighlight(
+        book_id,
+        "EPUB",
+        "local",
+        "viewer",
+        int(time.time()),
+        unique_uuid,
+        "highlight",
+        calibre_highlight_json,
+        highlight.text,
+    )
+    return calibre_highlight
 
 
 def decode_calibre_cfi(
@@ -585,8 +669,8 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
     target_node, overall_offset = decode_calibre_cfi(soup, cfi)
 
     # Traverse the document using Kobo's block-based numbering scheme
-    # Kobo starts numbering at 2, so we start at 1 to match after first increment
-    paranum = 1
+    # Calibre kepubify starts paranum at 0, increments before first text
+    paranum = 0
     increment_next_para = True
     found = False
 
