@@ -20,6 +20,7 @@ try:
 except ImportError:
     # For cli
     import db  # type: ignore
+
     sentence_positions = None  # type: ignore
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def find_text_by_kobo_path(
 
         text = str(element)
         # Skip whitespace-only text
-        if text in ("\n", " ", "\u00A0") or text.strip() == "":
+        if text in ("\n", " ", "\u00a0") or text.strip() == "":
             continue
 
         # Skip text inside figure elements
@@ -163,6 +164,7 @@ def process_calibre_epub_from_kobo(
     book_calibre_epub: pathlib.Path,
     book_id: int,
     highlights: List[db.KoboSourceHighlight],
+    kepub_format: str = "new",
 ) -> List[db.CalibreTargetHighlight]:
     """Process a calibre epub file and return a list of highlights."""
     result = []
@@ -185,7 +187,7 @@ def process_calibre_epub_from_kobo(
                             content_path=fixed_path[h.content_path]
                         )
                     calibre_target_highlight = parse_kobo_highlights(
-                        tmpdirname, h, book_id, spine_index_map
+                        tmpdirname, h, book_id, spine_index_map, kepub_format
                     )
                     if calibre_target_highlight:
                         result.append(calibre_target_highlight)
@@ -294,22 +296,6 @@ def kobo_color_to_calibre_color(color: int) -> str:
     return "yellow"
 
 
-def get_prev_sentences_offset(node, n_sentences_offset, lang: str = "en") -> int:
-    """Get the offset of the previous n sentences."""
-    logger.debug(
-        "Getting prev sentences offset, node: %s, offset: %d", node, n_sentences_offset
-    )
-    sentences = split_into_sentences(str(node), lang)
-
-    logger.debug("Sentences: %s", sentences)
-
-    prev_sentences_offset = 0
-    if n_sentences_offset > 1:
-        for i in range(0, n_sentences_offset - 1):
-            prev_sentences_offset += len(sentences[i])
-    return prev_sentences_offset
-
-
 def encode_cfi(target_node, target_offset) -> str:
     """Encode a CFI for calibre."""
     logger.debug(
@@ -349,14 +335,73 @@ def encode_cfi(target_node, target_offset) -> str:
     return cfi
 
 
+def is_new_kepub_format(kepub_format: str) -> bool:
+    """Check if the kepub format is new (Calibre kepubify) or old (KTE plugin).
+
+    Args:
+        kepub_format: Either 'new' or 'old'
+
+    Returns:
+        True if using new format (Calibre kepubify), False if using old format (KTE plugin)
+    """
+    return kepub_format == "new"
+
+
+def find_text_by_kte_path(
+    soup: BeautifulSoup, target_tag: int, target_sentence: int, lang: str = "en"
+) -> Optional[Tuple[bs4.element.NavigableString, int]]:
+    """
+    Find text node using old KTE plugin's text-node counting scheme.
+
+    KTE numbered text nodes sequentially (not by blocks), and split sentences with regex.
+    Returns (text_node, char_offset_to_start_of_sentence) or None if not found.
+    """
+    n_tag = 1
+
+    for child in soup.body.descendants:
+        parent_names = [p.name for p in child.parents]
+        if "figure" in parent_names:
+            continue
+
+        if (
+            not isinstance(child, bs4.element.NavigableString)
+            or isinstance(child, bs4.element.Comment)
+            or str(child) == "\n"
+            or str(child) == " "
+            or str(child) == "\u00a0"
+            or str(child).strip() == ""
+        ):
+            continue
+
+        logger.debug(f"KTE tag #{n_tag}: {repr(str(child)[:50])}...")
+
+        if n_tag == target_tag:
+            # Found the right text node, now find the sentence
+            sentences = split_into_sentences(str(child), lang)
+            if target_sentence <= len(sentences):
+                offset = sum(len(s) for s in sentences[: target_sentence - 1])
+                return (child, offset)
+            else:
+                logger.warning(
+                    f"Sentence {target_sentence} not found in tag {target_tag} "
+                    f"(only {len(sentences)} sentences)"
+                )
+                return None
+
+        n_tag += 1
+
+    logger.warning(f"KTE tag {target_tag} not found (max was {n_tag - 1})")
+    return None
+
+
 def parse_kobo_highlights(
-    book_prefix, highlight, book_id, spine_index_map
+    book_prefix, highlight, book_id, spine_index_map, kepub_format: str = "new"
 ) -> Optional[db.CalibreTargetHighlight]:
     """Parse a kobo highlight and return a calibre highlight."""
-    kobo_n_block_start, kobo_n_sentence_start = [
+    kobo_n_start, kobo_n_sentence_start = [
         int(i) for i in highlight.start_path.split("\\.")[1:]
     ]
-    kobo_n_block_end, kobo_n_sentence_end = [
+    kobo_n_end, kobo_n_sentence_end = [
         int(i) for i in highlight.end_path.split("\\.")[1:]
     ]
     logger.debug(
@@ -381,10 +426,14 @@ def parse_kobo_highlights(
 
         chapter_title = guess_chapter_title(soup)
 
-        # Find start node using Kobo's block-based numbering
-        start_result = find_text_by_kobo_path(
-            soup, kobo_n_block_start, kobo_n_sentence_start
-        )
+        # Use the configured kepub format
+        use_new_format = is_new_kepub_format(kepub_format)
+        find_func = find_text_by_kobo_path if use_new_format else find_text_by_kte_path
+        format_name = "new kepubify" if use_new_format else "old KTE"
+        logger.debug(f"Using {format_name} format (kepub_format={kepub_format})")
+
+        # Find start node
+        start_result = find_func(soup, kobo_n_start, kobo_n_sentence_start)
         if not start_result:
             logger.debug("Failed to find the target start node")
             return None
@@ -393,27 +442,23 @@ def parse_kobo_highlights(
         kobo_target_start_offset = sentence_start_offset + highlight.start_offset
 
         # Find end node
-        if kobo_n_block_start == kobo_n_block_end:
-            # Same block
+        if kobo_n_start == kobo_n_end:
+            # Same block/tag
             target_end_node = target_start_node
             if kobo_n_sentence_start == kobo_n_sentence_end:
                 # Same sentence
                 kobo_target_end_offset = sentence_start_offset + highlight.end_offset
             else:
-                # Different sentence in same block
-                end_result = find_text_by_kobo_path(
-                    soup, kobo_n_block_end, kobo_n_sentence_end
-                )
+                # Different sentence in same block/tag
+                end_result = find_func(soup, kobo_n_end, kobo_n_sentence_end)
                 if not end_result:
                     logger.debug("Failed to find the target end node")
                     return None
                 _, sentence_end_offset = end_result
                 kobo_target_end_offset = sentence_end_offset + highlight.end_offset
         else:
-            # Different block
-            end_result = find_text_by_kobo_path(
-                soup, kobo_n_block_end, kobo_n_sentence_end
-            )
+            # Different block/tag
+            end_result = find_func(soup, kobo_n_end, kobo_n_sentence_end)
             if not end_result:
                 logger.debug("Failed to find the target end node")
                 return None
@@ -527,7 +572,7 @@ def decode_calibre_cfi(
 
 
 def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
-    """
+    r"""
     Converts a Calibre CFI to a Kobo reader CFI.
 
     Returns a tuple:
@@ -561,7 +606,7 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
 
         text = str(element)
         # Skip whitespace-only text
-        if text in ("\n", " ", "\u00A0") or text.strip() == "":
+        if text in ("\n", " ", "\u00a0") or text.strip() == "":
             continue
 
         # Skip text inside figure elements

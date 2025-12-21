@@ -34,6 +34,7 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         self.gui = gui
         self.warnings = []
         self.info = []
+        self.kepub_format = "new"  # Default value
 
         # For debugging
         # kobo2calibre.configure_file_logging(None)
@@ -71,6 +72,15 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             layout.addWidget(QtWidgets.QLabel("Warnings:"))
             for warning in self.warnings:
                 layout.addWidget(QtWidgets.QLabel(f"• {warning}"))
+
+        # Add kepub format checkbox
+        self.kepub_checkbox = QtWidgets.QCheckBox(
+            "Use old KTE plugin format (uncheck for new Calibre kepubify format)"
+        )
+        self.kepub_checkbox.setChecked(False)  # Default to new format
+        self.kepub_checkbox.stateChanged.connect(self._on_kepub_format_changed)
+        layout.addWidget(self.kepub_checkbox)
+
         buttons = None
         if self.to_process_from_kobo:
             layout.addWidget(QtWidgets.QLabel("\nProceed?"))
@@ -91,12 +101,19 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         layout.addWidget(buttons)
         self.setLayout(layout)
 
+    def _on_kepub_format_changed(self, state: int) -> None:
+        """Handle checkbox state change."""
+        self.kepub_format = "old" if state == 2 else "new"  # Qt.CheckState.Checked == 2
+
     def _do_import(self) -> None:
 
+        # Use the kepub format from the checkbox
         to_insert_from_kobo = []
         for book, highlights in self.to_process_from_kobo:
             to_insert_from_kobo.extend(
-                converter.process_calibre_epub_from_kobo(book[2], book[1], highlights)
+                converter.process_calibre_epub_from_kobo(
+                    book[2], book[1], highlights, self.kepub_format
+                )
             )
         n_inserted_from_kobo = db.insert_highlights_into_calibre(
             self._calibre_db_path(), to_insert_from_kobo
