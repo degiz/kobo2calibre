@@ -1,238 +1,78 @@
 [
   {
     "kobo": {
-      "BookmarkID": "7e96d68b-cfb5-4a4d-9da8-7e026aace890",
-      "VolumeID": "file:///mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "StartContainerPath": "span#kobo\\.2\\.1",
-      "StartContainerChildIndex": -99,
-      "StartOffset": 69,
       "EndContainerPath": "span#kobo\\.2\\.2",
-      "EndContainerChildIndex": -99,
+      "StartOffset": 69,
       "EndOffset": 4,
       "Text": "itself. What",
-      "Annotation": "",
-      "ExtraAnnotationData": null,
-      "DateCreated": "2025-12-21T17:56:22.654",
-      "ChapterProgress": 0.3333333333333333,
-      "Hidden": "false",
-      "Version": null,
-      "DateModified": "2025-12-21T17:56:22Z",
-      "Creator": null,
-      "UUID": null,
-      "UserID": "ac93e85f-6c06-47b0-a492-7bdfaada4386",
-      "SyncTime": null,
-      "Published": "false",
-      "ContextString": null,
-      "Type": "highlight",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "Color": 0
     },
-    "calibre": {
-      "id": 43348,
-      "book": 401,
-      "format": "EPUB",
-      "user_type": "local",
-      "user": "viewer",
-      "timestamp": 1766341481.0,
-      "annot_id": "5f5818349f033e0a815099bdc6b76897",
-      "annot_type": "highlight",
-      "annot_data": "{\"start_cfi\": \"/2/4/4/1:69\", \"end_cfi\": \"/2/4/4/1:81\", \"highlighted_text\": \"itself. What\", \"spine_index\": 0, \"spine_name\": \"OEBPS/chapter1.xhtml\", \"style\": {\"kind\": \"color\", \"type\": \"builtin\", \"which\": \"yellow\"}, \"toc_family_titles\": [\"Chapter 1: On the Nature of Existence\"], \"timestamp\": \"2025-12-21T18:24:41Z\", \"type\": \"highlight\", \"uuid\": \"5f5818349f033e0a815099bdc6b76897\"}",
-      "searchable_text": "itself. What"
-    },
-    "calibre_annot_data": {
+    "expected": {
       "start_cfi": "/2/4/4/1:69",
       "end_cfi": "/2/4/4/1:81",
       "highlighted_text": "itself. What",
-      "spine_index": 0,
       "spine_name": "OEBPS/chapter1.xhtml",
-      "style": {
-        "kind": "color",
-        "type": "builtin",
-        "which": "yellow"
-      },
-      "toc_family_titles": [
-        "Chapter 1: On the Nature of Existence"
-      ],
-      "timestamp": "2025-12-21T18:24:41Z",
-      "type": "highlight",
-      "uuid": "5f5818349f033e0a815099bdc6b76897"
+      "spine_index": 0,
+      "color": "yellow"
     }
   },
   {
     "kobo": {
-      "BookmarkID": "9d0892b0-47a1-482f-86cc-04f56b02139f",
-      "VolumeID": "file:///mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "StartContainerPath": "span#kobo\\.3\\.2",
-      "StartContainerChildIndex": -99,
-      "StartOffset": 98,
       "EndContainerPath": "span#kobo\\.3\\.3",
-      "EndContainerChildIndex": -99,
+      "StartOffset": 98,
       "EndOffset": 12,
       "Text": "understanding it. The thinking",
-      "Annotation": "",
-      "ExtraAnnotationData": null,
-      "DateCreated": "2025-12-21T17:56:32.197",
-      "ChapterProgress": 0.3333333333333333,
-      "Hidden": "false",
-      "Version": null,
-      "DateModified": "2025-12-21T17:56:32Z",
-      "Creator": null,
-      "UUID": null,
-      "UserID": "ac93e85f-6c06-47b0-a492-7bdfaada4386",
-      "SyncTime": null,
-      "Published": "false",
-      "ContextString": null,
-      "Type": "highlight",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "Color": 1
     },
-    "calibre": {
-      "id": 43351,
-      "book": 401,
-      "format": "EPUB",
-      "user_type": "local",
-      "user": "viewer",
-      "timestamp": 1766341481.0,
-      "annot_id": "f249f5fdbd453bd7b0f808153cb8d19f",
-      "annot_type": "highlight",
-      "annot_data": "{\"start_cfi\": \"/2/4/6/1:163\", \"end_cfi\": \"/2/4/6/1:193\", \"highlighted_text\": \"understanding it. The thinking\", \"spine_index\": 0, \"spine_name\": \"OEBPS/chapter1.xhtml\", \"style\": {\"kind\": \"color\", \"type\": \"builtin\", \"which\": \"purple\"}, \"toc_family_titles\": [\"Chapter 1: On the Nature of Existence\"], \"timestamp\": \"2025-12-21T18:24:41Z\", \"type\": \"highlight\", \"uuid\": \"f249f5fdbd453bd7b0f808153cb8d19f\"}",
-      "searchable_text": "understanding it. The thinking"
-    },
-    "calibre_annot_data": {
+    "expected": {
       "start_cfi": "/2/4/6/1:163",
       "end_cfi": "/2/4/6/1:193",
       "highlighted_text": "understanding it. The thinking",
-      "spine_index": 0,
       "spine_name": "OEBPS/chapter1.xhtml",
-      "style": {
-        "kind": "color",
-        "type": "builtin",
-        "which": "purple"
-      },
-      "toc_family_titles": [
-        "Chapter 1: On the Nature of Existence"
-      ],
-      "timestamp": "2025-12-21T18:24:41Z",
-      "type": "highlight",
-      "uuid": "f249f5fdbd453bd7b0f808153cb8d19f"
+      "spine_index": 0,
+      "color": "purple"
     }
   },
   {
     "kobo": {
-      "BookmarkID": "e40cd900-e1c6-4523-8893-73f646947df3",
-      "VolumeID": "file:///mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "StartContainerPath": "span#kobo\\.4\\.1",
-      "StartContainerChildIndex": -99,
-      "StartOffset": 17,
       "EndContainerPath": "span#kobo\\.4\\.2",
-      "EndContainerChildIndex": -99,
+      "StartOffset": 17,
       "EndOffset": 41,
       "Text": "between time and being presents another fascinating dimension of inquiry. Does existence require temporal extension",
-      "Annotation": "",
-      "ExtraAnnotationData": null,
-      "DateCreated": "2025-12-21T17:57:00.823",
-      "ChapterProgress": 0.6666666666666666,
-      "Hidden": "false",
-      "Version": null,
-      "DateModified": "2025-12-21T17:57:00Z",
-      "Creator": null,
-      "UUID": null,
-      "UserID": "ac93e85f-6c06-47b0-a492-7bdfaada4386",
-      "SyncTime": null,
-      "Published": "false",
-      "ContextString": null,
-      "Type": "highlight",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "Color": 2
     },
-    "calibre": {
-      "id": 43349,
-      "book": 401,
-      "format": "EPUB",
-      "user_type": "local",
-      "user": "viewer",
-      "timestamp": 1766341481.0,
-      "annot_id": "7fbb60e321fe301082cf6499ab46252d",
-      "annot_type": "highlight",
-      "annot_data": "{\"start_cfi\": \"/2/4/8/1:17\", \"end_cfi\": \"/2/4/8/1:132\", \"highlighted_text\": \"between time and being presents another fascinating dimension of inquiry. Does existence require temporal extension\", \"spine_index\": 0, \"spine_name\": \"OEBPS/chapter1.xhtml\", \"style\": {\"kind\": \"color\", \"type\": \"builtin\", \"which\": \"blue\"}, \"toc_family_titles\": [\"Chapter 1: On the Nature of Existence\"], \"timestamp\": \"2025-12-21T18:24:41Z\", \"type\": \"highlight\", \"uuid\": \"7fbb60e321fe301082cf6499ab46252d\"}",
-      "searchable_text": "between time and being presents another fascinating dimension of inquiry. Does existence require temporal extension"
-    },
-    "calibre_annot_data": {
+    "expected": {
       "start_cfi": "/2/4/8/1:17",
       "end_cfi": "/2/4/8/1:132",
       "highlighted_text": "between time and being presents another fascinating dimension of inquiry. Does existence require temporal extension",
-      "spine_index": 0,
       "spine_name": "OEBPS/chapter1.xhtml",
-      "style": {
-        "kind": "color",
-        "type": "builtin",
-        "which": "blue"
-      },
-      "toc_family_titles": [
-        "Chapter 1: On the Nature of Existence"
-      ],
-      "timestamp": "2025-12-21T18:24:41Z",
-      "type": "highlight",
-      "uuid": "7fbb60e321fe301082cf6499ab46252d"
+      "spine_index": 0,
+      "color": "blue"
     }
   },
   {
     "kobo": {
-      "BookmarkID": "24c694e4-1b7e-4591-a6e3-d55b93710596",
-      "VolumeID": "file:///mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "StartContainerPath": "span#kobo\\.7\\.1",
-      "StartContainerChildIndex": -99,
-      "StartOffset": 107,
       "EndContainerPath": "span#kobo\\.7\\.2",
-      "EndContainerChildIndex": -99,
+      "StartOffset": 107,
       "EndOffset": 15,
       "Text": "understanding. To philosophize",
-      "Annotation": "",
-      "ExtraAnnotationData": null,
-      "DateCreated": "2025-12-21T17:57:10.464",
-      "ChapterProgress": 1.0,
-      "Hidden": "false",
-      "Version": null,
-      "DateModified": "2025-12-21T17:57:10Z",
-      "Creator": null,
-      "UUID": null,
-      "UserID": "ac93e85f-6c06-47b0-a492-7bdfaada4386",
-      "SyncTime": null,
-      "Published": "false",
-      "ContextString": null,
-      "Type": "highlight",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/Old Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
       "Color": 3
     },
-    "calibre": {
-      "id": 43350,
-      "book": 401,
-      "format": "EPUB",
-      "user_type": "local",
-      "user": "viewer",
-      "timestamp": 1766341481.0,
-      "annot_id": "91e54e316c2c3d2c8f218ebc16804a82",
-      "annot_type": "highlight",
-      "annot_data": "{\"start_cfi\": \"/2/4/14/1:107\", \"end_cfi\": \"/2/4/14/1:137\", \"highlighted_text\": \"understanding. To philosophize\", \"spine_index\": 0, \"spine_name\": \"OEBPS/chapter1.xhtml\", \"style\": {\"kind\": \"color\", \"type\": \"builtin\", \"which\": \"green\"}, \"toc_family_titles\": [\"Chapter 1: On the Nature of Existence\"], \"timestamp\": \"2025-12-21T18:24:41Z\", \"type\": \"highlight\", \"uuid\": \"91e54e316c2c3d2c8f218ebc16804a82\"}",
-      "searchable_text": "understanding. To philosophize"
-    },
-    "calibre_annot_data": {
+    "expected": {
       "start_cfi": "/2/4/14/1:107",
       "end_cfi": "/2/4/14/1:137",
       "highlighted_text": "understanding. To philosophize",
-      "spine_index": 0,
       "spine_name": "OEBPS/chapter1.xhtml",
-      "style": {
-        "kind": "color",
-        "type": "builtin",
-        "which": "green"
-      },
-      "toc_family_titles": [
-        "Chapter 1: On the Nature of Existence"
-      ],
-      "timestamp": "2025-12-21T18:24:41Z",
-      "type": "highlight",
-      "uuid": "91e54e316c2c3d2c8f218ebc16804a82"
+      "spine_index": 0,
+      "color": "green"
     }
   }
 ]

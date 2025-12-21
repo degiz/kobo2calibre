@@ -28,25 +28,6 @@ class TestConverter(unittest.TestCase):
         # Path to test EPUB (old KTE format)
         cls.epub_path = project_dir / "test" / "old_kte.epub"
 
-    def test_kobo_color_to_calibre_color(self):
-        """Test color conversion from Kobo to Calibre format."""
-        # Based on actual data in test files
-        self.assertEqual(converter.kobo_color_to_calibre_color(0), "yellow")
-        self.assertEqual(converter.kobo_color_to_calibre_color(1), "purple")
-        self.assertEqual(converter.kobo_color_to_calibre_color(2), "blue")
-        self.assertEqual(converter.kobo_color_to_calibre_color(3), "green")
-        # Default case
-        self.assertEqual(converter.kobo_color_to_calibre_color(99), "yellow")
-
-    def test_calibre_color_to_kobo_color(self):
-        """Test color conversion from Calibre to Kobo format."""
-        self.assertEqual(converter.calibre_color_to_kobo_color("yellow"), 0)
-        self.assertEqual(converter.calibre_color_to_kobo_color("purple"), 1)
-        self.assertEqual(converter.calibre_color_to_kobo_color("blue"), 2)
-        self.assertEqual(converter.calibre_color_to_kobo_color("green"), 3)
-        # Default case
-        self.assertEqual(converter.calibre_color_to_kobo_color("unknown"), 0)
-
     def test_kobo_to_calibre_conversion(self):
         """Test the actual CFI conversion from Kobo to Calibre format.
 
@@ -72,7 +53,7 @@ class TestConverter(unittest.TestCase):
             # Test each joined highlight (Kobo → Calibre conversion)
             for joined in self.joined_highlights:
                 kobo_h = joined["kobo"]
-                expected = joined["calibre_annot_data"]
+                expected = joined["expected"]
 
                 with self.subTest(text=kobo_h["Text"]):
                     # Extract content path from ContentID
@@ -123,13 +104,12 @@ class TestConverter(unittest.TestCase):
                     )
 
                     # Verify text matches
-                    self.assertEqual(result_data["highlighted_text"], kobo_h["Text"])
+                    self.assertEqual(
+                        result_data["highlighted_text"], expected["highlighted_text"]
+                    )
 
                     # Verify color matches
-                    expected_color = converter.kobo_color_to_calibre_color(
-                        kobo_h["Color"]
-                    )
-                    self.assertEqual(result_data["style"]["which"], expected_color)
+                    self.assertEqual(result_data["style"]["which"], expected["color"])
 
                     # Verify spine info matches
                     self.assertEqual(result_data["spine_name"], expected["spine_name"])
