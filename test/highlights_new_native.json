@@ -1,0 +1,78 @@
+[
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.2\\.2",
+      "EndContainerPath": "span#kobo\\.2\\.2",
+      "StartOffset": 0,
+      "EndOffset": 27,
+      "Text": "What does it mean to exist?",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
+      "Color": 0
+    },
+    "expected": {
+      "start_cfi": "/2/4/4/1:77",
+      "end_cfi": "/2/4/4/1:104",
+      "highlighted_text": "What does it mean to exist?",
+      "spine_name": "OEBPS/chapter1.xhtml",
+      "spine_index": 0,
+      "color": "yellow"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.3\\.2",
+      "EndContainerPath": "span#kobo\\.3\\.3",
+      "StartOffset": 98,
+      "EndOffset": 12,
+      "Text": "understanding it. The thinking",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
+      "Color": 1
+    },
+    "expected": {
+      "start_cfi": "/2/4/6/1:163",
+      "end_cfi": "/2/4/6/1:193",
+      "highlighted_text": "understanding it. The thinking",
+      "spine_name": "OEBPS/chapter1.xhtml",
+      "spine_index": 0,
+      "color": "purple"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.4\\.4",
+      "EndContainerPath": "span#kobo\\.5\\.2",
+      "StartOffset": 0,
+      "EndOffset": 33,
+      "Text": "Yet our lived experience tells us that change is the very essence of existence.\n\nPerhaps the answer lies not in choosing between these opposing views, but in recognizing that existence operates on multiple levels simultaneously. The physical realm may be subject",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
+      "Color": 2
+    },
+    "expected": {
+      "start_cfi": "/2/4/8/1:335",
+      "end_cfi": "/2/4/10/1:181",
+      "highlighted_text": "Yet our lived experience tells us that change is the very essence of existence.\n\nPerhaps the answer lies not in choosing between these opposing views, but in recognizing that existence operates on multiple levels simultaneously. The physical realm may be subject",
+      "spine_name": "OEBPS/chapter1.xhtml",
+      "spine_index": 0,
+      "color": "blue"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.7\\.1",
+      "EndContainerPath": "span#kobo\\.7\\.2",
+      "StartOffset": 107,
+      "EndOffset": 15,
+      "Text": "understanding. To philosophize",
+      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
+      "Color": 3
+    },
+    "expected": {
+      "start_cfi": "/2/4/14/1:107",
+      "end_cfi": "/2/4/14/1:137",
+      "highlighted_text": "understanding. To philosophize",
+      "spine_name": "OEBPS/chapter1.xhtml",
+      "spine_index": 0,
+      "color": "green"
+    }
+  }
+]
