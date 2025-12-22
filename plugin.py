@@ -13,7 +13,8 @@ try:
     from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
 except ImportError:
     # For local calibre debug
-    import sys, os
+    import os
+    import sys
 
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     import converter  # type: ignore
@@ -181,8 +182,9 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 self._calibre_db_path(), book[1]
             )
             result_from_calibre.append((book, highlights_from_calibre))
+            highlight_count = len(highlights_from_calibre)
             self.info.append(
-                f'Book "{book[0]}" has {len(highlights_from_calibre)} highlights in Calibre'
+                f'Book "{book[0]}" has {highlight_count} highlights in Calibre'
             )
 
         return result_from_kobo, result_from_calibre
