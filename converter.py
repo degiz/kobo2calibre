@@ -61,11 +61,10 @@ def split_into_sentences(text: str, lang: str = "en") -> List[str]:
 def get_block_offset_from_kepubify(
     raw_html: bytes, block_num: int, sentence_num: int
 ) -> Optional[int]:
-    """
-    Use Calibre's kepubify to find the character offset from the start of a block
-    to the start of a specific sentence.
+    """Use Calibre's kepubify to find the character offset.
 
-    Returns the offset, or None if the span is not found.
+    Find the character offset from the start of a block to the start of a
+    specific sentence. Returns the offset, or None if the span is not found.
     """
     if not HAS_KEPUBIFY:
         logger.warning("Kepubify not available")
@@ -99,10 +98,10 @@ def get_block_offset_from_kepubify(
 def find_text_node_at_block_offset(
     soup: BeautifulSoup, target_block: int, char_offset: int
 ) -> Optional[Tuple[bs4.element.NavigableString, int]]:
-    """
+    """Find the text node containing a character offset in a block.
+
     Find the text node in the original document that contains the character
     at the given offset within the specified block.
-
     Returns (text_node, offset_within_node) or None.
     """
     # Find the Nth block element
@@ -164,7 +163,7 @@ def get_spine_index_map(
         spine_ids = [
             s["idref"]
             for s in soup.package.spine.children
-            if type(s) == bs4.element.Tag
+            if isinstance(s, bs4.element.Tag)
         ]
         spine_index = {idref: i for i, idref in enumerate(spine_ids)}
 
@@ -174,7 +173,7 @@ def get_spine_index_map(
         hrefs = [
             s
             for s in soup.package.manifest
-            if type(s) == bs4.element.Tag
+            if isinstance(s, bs4.element.Tag)
             and "application/xhtml" in s["media-type"]
             and (s["id"] in spine_ids)
         ]
@@ -267,9 +266,6 @@ def process_calibre_epub_from_calibre(
                     raw_html = f.read()
                 soup = BeautifulSoup(raw_html, "html.parser")
 
-                # Get text of <h1> tag
-                text = soup.h1.get_text() if soup.h1 else ""
-
                 kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
                     soup, h.start_cfi, raw_html=raw_html, kepub_format=kepub_format
                 )
@@ -278,7 +274,9 @@ def process_calibre_epub_from_calibre(
                 )
                 logger.debug(f"Calibre CFI: {h.start_cfi}, {h.end_cfi}")
                 logger.debug(
-                    f"Kobo CFI: {kobo_start_path}, offset: {kobo_start_offset}, {kobo_end_path}, offset: {kobo_end_offset}"
+                    f"Kobo CFI: {kobo_start_path}, "
+                    f"offset: {kobo_start_offset}, {kobo_end_path}, "
+                    f"offset: {kobo_end_offset}"
                 )
                 logger.debug(f"Text: {h.highlighted_text}")
 
@@ -366,9 +364,9 @@ def encode_cfi(target_node, target_offset) -> str:
     for node in nodes:
         if node == target_node:
             if isinstance(node, bs4.element.Tag):
-                cfi += f"/{current_id}/1:{target_offset}"
+                cfi += f"/{current_id}/1: {target_offset}"
             else:
-                cfi += f"/{current_id}:{target_offset}"
+                cfi += f"/{current_id}: {target_offset}"
             break
         current_id += 1
 
@@ -376,13 +374,13 @@ def encode_cfi(target_node, target_offset) -> str:
 
 
 def is_new_kepub_format(kepub_format: str) -> bool:
-    """Check if the kepub format is new (Calibre kepubify) or old (KTE plugin).
+    """Check if the kepub format is new or old.
 
     Args:
         kepub_format: Either 'new' or 'old'
 
     Returns:
-        True if using new format (Calibre kepubify), False if using old format (KTE plugin)
+        True if using new format (Calibre kepubify), False if old (KTE).
     """
     return kepub_format == "new"
 
@@ -393,8 +391,9 @@ def find_text_by_kte_path(
     """
     Find text node using old KTE plugin's text-node counting scheme.
 
-    KTE numbered text nodes sequentially (not by blocks), and split sentences with regex.
-    Returns (text_node, char_offset_to_start_of_sentence) or None if not found.
+    KTE numbered text nodes sequentially (not by blocks), and split
+    sentences with regex. Returns (text_node, char_offset_to_start_of_sentence)
+    or None if not found.
     """
     n_tag = 1
 
@@ -406,9 +405,7 @@ def find_text_by_kte_path(
         if (
             not isinstance(child, bs4.element.NavigableString)
             or isinstance(child, bs4.element.Comment)
-            or str(child) == "\n"
-            or str(child) == " "
-            or str(child) == "\u00a0"
+            or str(child) in ("\n", " ", "\u00a0")
             or str(child).strip() == ""
         ):
             continue
@@ -605,15 +602,15 @@ def parse_kobo_highlights(
 def decode_calibre_cfi(
     soup: BeautifulSoup, cfi: str
 ) -> (bs4.element.NavigableString, int):
-    """
-    Decodes a Calibre CFI string and returns the target NavigableString and its character offset.
+    """Decode a Calibre CFI string.
 
+    Returns the target NavigableString and its character offset.
     The Calibre CFI format is expected to have slash-separated segments.
-    The intermediate segments (e.g. /2/4/2[id1]/4) are encoded using even numbers.
-    The final segment is of the form '/<node_index>:<offset>', where node_index is counted among
-    all children (including non-tags), starting at 1.
+    The intermediate segments (e.g. /2/4/2[id1]/4) are encoded using even
+    numbers. The final segment is of the form '/<node_index>:<offset>',
+    where node_index is counted among all children (including non-tags),
+    starting at 1.
     """
-
     parts = cfi.strip().split("/")
     if len(parts) < 2:
         raise ValueError("Invalid CFI string")
@@ -639,7 +636,8 @@ def decode_calibre_cfi(
         ]
 
         logger.debug(
-            f"Processing segment '{part}': current_node={current_node.name}, children_count={len(children)}, child_index={child_index}"
+            f"Processing segment '{part}': current_node={current_node.name}, "
+            f"children_count={len(children)}, child_index={child_index}"
         )
 
         if child_index < 0 or child_index >= len(children):
@@ -658,7 +656,8 @@ def decode_calibre_cfi(
         raise ValueError("Invalid final segment in CFI: " + final_segment)
     sibling_number = int(m.group(1))
     offset = int(m.group(2))
-    # For the final segment, we use the parent’s full list of children (including strings)
+    # For the final segment, we use the parent's full list of children
+    # (including strings)
     siblings = list(current_node.children)
     if sibling_number < 1 or sibling_number > len(siblings):
         raise IndexError("Sibling index out of bounds in final segment")
@@ -745,7 +744,8 @@ def find_block_and_sentence_for_offset_new_format(
         cumulative_offset += span_len
 
     logger.warning(
-        f"Could not find sentence for offset {char_offset_in_block} in block {kepub_block_num}"
+        f"Could not find sentence for offset {char_offset_in_block} "
+        f"in block {kepub_block_num}"
     )
     return None
 
@@ -753,8 +753,7 @@ def find_block_and_sentence_for_offset_new_format(
 def convert_calibre_cfi_to_kobo(
     soup: BeautifulSoup, cfi: str, raw_html: bytes = None, kepub_format: str = "old"
 ) -> Tuple[str, int]:
-    r"""
-    Converts a Calibre CFI to a Kobo reader CFI.
+    r"""Convert a Calibre CFI to a Kobo reader CFI.
 
     Args:
         soup: BeautifulSoup of the HTML document
@@ -837,7 +836,7 @@ def convert_calibre_cfi_to_kobo(
 
 
 def guess_chapter_title(soup):
-
+    """Guess the chapter title from the HTML soup."""
     # 2. Look for <h1> as it's common for chapter headings
     h1 = soup.find("h1")
     if h1 and h1.get_text():
@@ -852,7 +851,8 @@ def guess_chapter_title(soup):
         if h2_text:
             return h2_text
 
-    # 4. As a fallback, try to see if there's a div with a class indicating chapter title
+    # 4. As a fallback, try to see if there's a div with a class
+    # indicating chapter title
     possible_titles = soup.find_all("div", class_="chapter-title")
     for div in possible_titles:
         text = div.get_text().strip()
