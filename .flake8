@@ -1,3 +1,5 @@
 [flake8]
 max-line-length = 88
-extend-ignore = D100, D104
+extend-ignore = D100, D104, E203
+per-file-ignores =
+    converter.py:E231

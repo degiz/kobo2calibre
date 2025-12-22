@@ -364,9 +364,9 @@ def encode_cfi(target_node, target_offset) -> str:
     for node in nodes:
         if node == target_node:
             if isinstance(node, bs4.element.Tag):
-                cfi += f"/{current_id}/1: {target_offset}"
+                cfi += f"/{current_id}/1:{target_offset}"
             else:
-                cfi += f"/{current_id}: {target_offset}"
+                cfi += f"/{current_id}:{target_offset}"
             break
         current_id += 1
 
