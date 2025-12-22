@@ -458,7 +458,6 @@ def parse_kobo_highlights(
 
     with open(input_filename, "rb") as f:
         raw_html = f.read()
-
     # For chapter title, we still need BeautifulSoup
     soup = BeautifulSoup(raw_html, "html.parser")
     chapter_title = guess_chapter_title(soup)

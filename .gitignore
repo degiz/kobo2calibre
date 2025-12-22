@@ -11,3 +11,4 @@ __pycache__
 **.sqlite*
 *.org
 *.zip
+.aider*
