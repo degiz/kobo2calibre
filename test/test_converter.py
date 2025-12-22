@@ -1,9 +1,7 @@
 import json
 import pathlib
 import sys
-import tempfile
 import unittest
-import zipfile
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
@@ -33,8 +31,8 @@ class TestConverter(unittest.TestCase):
     def test_kobo_to_calibre_conversion(self):
         """Test the actual CFI conversion from Kobo to Calibre format.
 
-        This is the core integration test that verifies the complete conversion pipeline:
-        Tests both old KTE format and new native format EPUBs.
+        This is the core integration test that verifies the complete conversion pipeline.
+        Tests via the high-level process_calibre_epub_from_kobo function.
         """
         test_dir = pathlib.Path(__file__).parent
         project_dir = test_dir.parent
@@ -49,84 +47,77 @@ class TestConverter(unittest.TestCase):
                 if not epub_path.exists():
                     self.skipTest(f"Test EPUB not found: {epub_path}")
 
-                # Create spine index map
-                with tempfile.TemporaryDirectory() as tmpdirname:
-                    with zipfile.ZipFile(epub_path, "r") as zip_ref:
-                        zip_ref.extractall(tmpdirname)
+                # Create KoboSourceHighlight objects from test data
+                kobo_highlights = []
+                for joined in joined_highlights:
+                    kobo_h = joined["kobo"]
+                    content_id = kobo_h["ContentID"]
+                    parts = content_id.split("!")
+                    content_path = "/".join(parts[1:])
 
-                    spine_index_map, _, _ = converter.get_spine_index_map(
-                        pathlib.Path(tmpdirname)
+                    kobo_highlights.append(
+                        db.KoboSourceHighlight(
+                            start_path=kobo_h["StartContainerPath"],
+                            end_path=kobo_h["EndContainerPath"],
+                            start_offset=kobo_h["StartOffset"],
+                            end_offset=kobo_h["EndOffset"],
+                            text=kobo_h["Text"],
+                            content_path=content_path,
+                            color=kobo_h["Color"],
+                        )
                     )
 
-                    # Test each joined highlight (Kobo → Calibre conversion)
-                    for joined in joined_highlights:
-                        kobo_h = joined["kobo"]
-                        expected = joined["expected"]
+                # Call the high-level function
+                calibre_highlights = converter.process_calibre_epub_from_kobo(
+                    epub_path,
+                    book_id=408,
+                    highlights=kobo_highlights,
+                    kepub_format=config["kepub_format"],
+                )
 
-                        with self.subTest(format=config["name"], text=kobo_h["Text"]):
-                            # Extract content path from ContentID
-                            content_id = kobo_h["ContentID"]
-                            parts = content_id.split("!")
-                            content_path = "/".join(parts[1:])
+                self.assertEqual(len(calibre_highlights), len(joined_highlights))
 
-                            # Create KoboSourceHighlight
-                            kobo_highlight = db.KoboSourceHighlight(
-                                start_path=kobo_h["StartContainerPath"],
-                                end_path=kobo_h["EndContainerPath"],
-                                start_offset=kobo_h["StartOffset"],
-                                end_offset=kobo_h["EndOffset"],
-                                text=kobo_h["Text"],
-                                content_path=content_path,
-                                color=kobo_h["Color"],
-                            )
+                # Verify each highlight
+                for i, joined in enumerate(joined_highlights):
+                    expected = joined["expected"]
+                    result = calibre_highlights[i]
 
-                            # Convert using the specified format
-                            result = converter.parse_kobo_highlights(
-                                tmpdirname,
-                                kobo_highlight,
-                                book_id=408,
-                                spine_index_map=spine_index_map,
-                                kepub_format=config["kepub_format"],
-                            )
+                    with self.subTest(
+                        format=config["name"],
+                        text=joined["kobo"]["Text"][:30],
+                    ):
+                        result_data = result.highlight
 
-                            # Verify conversion succeeded
-                            self.assertIsNotNone(
-                                result, f"Conversion failed for: {kobo_h['Text']}"
-                            )
+                        # Verify CFI matches
+                        self.assertEqual(
+                            result_data["start_cfi"],
+                            expected["start_cfi"],
+                            f"Start CFI mismatch for '{joined['kobo']['Text'][:30]}...'",
+                        )
+                        self.assertEqual(
+                            result_data["end_cfi"],
+                            expected["end_cfi"],
+                            f"End CFI mismatch for '{joined['kobo']['Text'][:30]}...'",
+                        )
 
-                            # Parse result highlight JSON
-                            result_data = result.highlight
+                        # Verify text matches
+                        self.assertEqual(
+                            result_data["highlighted_text"],
+                            expected["highlighted_text"],
+                        )
 
-                            # Verify CFI matches
-                            self.assertEqual(
-                                result_data["start_cfi"],
-                                expected["start_cfi"],
-                                f"Start CFI mismatch for '{kobo_h['Text'][:30]}...'",
-                            )
-                            self.assertEqual(
-                                result_data["end_cfi"],
-                                expected["end_cfi"],
-                                f"End CFI mismatch for '{kobo_h['Text'][:30]}...'",
-                            )
+                        # Verify color matches
+                        self.assertEqual(
+                            result_data["style"]["which"], expected["color"]
+                        )
 
-                            # Verify text matches
-                            self.assertEqual(
-                                result_data["highlighted_text"],
-                                expected["highlighted_text"],
-                            )
-
-                            # Verify color matches
-                            self.assertEqual(
-                                result_data["style"]["which"], expected["color"]
-                            )
-
-                            # Verify spine info matches
-                            self.assertEqual(
-                                result_data["spine_name"], expected["spine_name"]
-                            )
-                            self.assertEqual(
-                                result_data["spine_index"], expected["spine_index"]
-                            )
+                        # Verify spine info matches
+                        self.assertEqual(
+                            result_data["spine_name"], expected["spine_name"]
+                        )
+                        self.assertEqual(
+                            result_data["spine_index"], expected["spine_index"]
+                        )
 
     def test_calibre_to_kobo_conversion(self):
         """Test the CFI conversion from Calibre to Kobo format.
