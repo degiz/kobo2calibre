@@ -1,78 +1,78 @@
 [
   {
     "kobo": {
-      "StartContainerPath": "span#kobo\\.2\\.2",
-      "EndContainerPath": "span#kobo\\.2\\.2",
-      "StartOffset": 0,
-      "EndOffset": 27,
-      "Text": "What does it mean to exist?",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
+      "StartContainerPath": "span#kobo\\.3\\.5",
+      "EndContainerPath": "span#kobo\\.3\\.7",
+      "StartOffset": 23,
+      "EndOffset": 45,
+      "Text": "gainsay. Therefore, it has seemed to me particularly timely to introduce",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-2.htm.xhtml",
       "Color": 0
     },
     "expected": {
-      "start_cfi": "/2/4/4/1:77",
-      "end_cfi": "/2/4/4/1:104",
-      "highlighted_text": "What does it mean to exist?",
-      "spine_name": "OEBPS/chapter1.xhtml",
-      "spine_index": 0,
+      "start_cfi": "/2/4/4/1:240",
+      "end_cfi": "/2/4/4/1:312",
+      "highlighted_text": "gainsay. Therefore, it has seemed to me particularly timely to introduce",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-2.htm.xhtml",
+      "spine_index": 3,
       "color": "yellow"
     }
   },
   {
     "kobo": {
-      "StartContainerPath": "span#kobo\\.3\\.2",
-      "EndContainerPath": "span#kobo\\.3\\.3",
-      "StartOffset": 98,
-      "EndOffset": 12,
-      "Text": "understanding it. The thinking",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
-      "Color": 1
+      "StartContainerPath": "span#kobo\\.5\\.9",
+      "EndContainerPath": "span#kobo\\.6\\.1",
+      "StartOffset": 30,
+      "EndOffset": 9,
+      "Text": "unscientific.\n\nTo add to",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-3.htm.xhtml",
+      "Color": 3
     },
     "expected": {
-      "start_cfi": "/2/4/6/1:163",
-      "end_cfi": "/2/4/6/1:193",
-      "highlighted_text": "understanding it. The thinking",
-      "spine_name": "OEBPS/chapter1.xhtml",
-      "spine_index": 0,
-      "color": "purple"
+      "start_cfi": "/2/4/8/1:414",
+      "end_cfi": "/2/4/10/1:9",
+      "highlighted_text": "unscientific.\n\nTo add to",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
+      "spine_index": 4,
+      "color": "green"
     }
   },
   {
     "kobo": {
-      "StartContainerPath": "span#kobo\\.4\\.4",
-      "EndContainerPath": "span#kobo\\.5\\.2",
-      "StartOffset": 0,
-      "EndOffset": 33,
-      "Text": "Yet our lived experience tells us that change is the very essence of existence.\n\nPerhaps the answer lies not in choosing between these opposing views, but in recognizing that existence operates on multiple levels simultaneously. The physical realm may be subject",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
+      "StartContainerPath": "span#kobo\\.46\\.10",
+      "EndContainerPath": "span#kobo\\.46\\.13",
+      "StartOffset": 8,
+      "EndOffset": 1,
+      "Text": "is often compared with that of hunger, and this craving and need lying in all humanity is called by Freud libido.",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-3.htm.xhtml",
       "Color": 2
     },
     "expected": {
-      "start_cfi": "/2/4/8/1:335",
-      "end_cfi": "/2/4/10/1:181",
-      "highlighted_text": "Yet our lived experience tells us that change is the very essence of existence.\n\nPerhaps the answer lies not in choosing between these opposing views, but in recognizing that existence operates on multiple levels simultaneously. The physical realm may be subject",
-      "spine_name": "OEBPS/chapter1.xhtml",
-      "spine_index": 0,
+      "start_cfi": "/2/4/90/1:402",
+      "end_cfi": "/2/4/90/1:509",
+      "highlighted_text": "is often compared with that of hunger, and this craving and need lying in all humanity is called by Freud libido.",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
+      "spine_index": 4,
       "color": "blue"
     }
   },
   {
     "kobo": {
-      "StartContainerPath": "span#kobo\\.7\\.1",
-      "EndContainerPath": "span#kobo\\.7\\.2",
-      "StartOffset": 107,
-      "EndOffset": 15,
-      "Text": "understanding. To philosophize",
-      "ContentID": "/mnt/onboard/Philosopher, Anonymous/New Format - Anonymous Philosopher.kepub.epub!OEBPS!chapter1.xhtml",
-      "Color": 3
+      "StartContainerPath": "span#kobo\\.59\\.4",
+      "EndContainerPath": "span#kobo\\.60\\.1",
+      "StartOffset": 11,
+      "EndOffset": 13,
+      "Text": "and reality of our being.\u201d[2]\n\nIn developing",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-3.htm.xhtml",
+      "Color": 1
     },
     "expected": {
-      "start_cfi": "/2/4/14/1:107",
-      "end_cfi": "/2/4/14/1:137",
-      "highlighted_text": "understanding. To philosophize",
-      "spine_name": "OEBPS/chapter1.xhtml",
-      "spine_index": 0,
-      "color": "green"
+      "start_cfi": "/2/4/116/1:180",
+      "end_cfi": "/2/4/118/1:13",
+      "highlighted_text": "and reality of our being.\u201d[2]\n\nIn developing",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
+      "spine_index": 4,
+      "color": "red"
     }
   }
 ]
