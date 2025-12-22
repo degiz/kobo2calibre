@@ -130,7 +130,7 @@ def find_text_node_at_block_offset(
         text = str(node)
         node_len = len(text)
 
-        if cumulative_offset + node_len > char_offset:
+        if cumulative_offset + node_len >= char_offset:
             # This node contains our target character
             offset_in_node = char_offset - cumulative_offset
             logger.debug(

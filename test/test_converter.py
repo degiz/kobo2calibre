@@ -84,7 +84,7 @@ class TestConverter(unittest.TestCase):
                             result = converter.parse_kobo_highlights(
                                 tmpdirname,
                                 kobo_highlight,
-                                book_id=401,
+                                book_id=408,
                                 spine_index_map=spine_index_map,
                                 kepub_format=config["kepub_format"],
                             )
