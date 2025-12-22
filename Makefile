@@ -1,3 +1,5 @@
+.PHONY: build run debug test
+
 build:
 	zip Kobo2Calibre.zip \
 		converter.py \
@@ -15,5 +17,8 @@ debug:
 	calibre-customize -b $(shell pwd); calibre-debug -g
 
 test:
+	calibre-debug test/run_tests.py
 	flake8 .
 	rm -rf .mypy_cache && mypy . --explicit-package-bases --namespace-packages
+	
+
