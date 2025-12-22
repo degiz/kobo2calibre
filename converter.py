@@ -8,25 +8,147 @@ import zipfile
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-import bs4
-from bs4 import BeautifulSoup, NavigableString
+import bs4  # type: ignore
+from bs4 import BeautifulSoup
 
 from db import KoboTargetHighlight
 
 try:
     # For calibre gui plugin
-    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import db  # type: ignore
 except ImportError:
     # For cli
     import db  # type: ignore
 
+# Try to import calibre's kepubify (available when running via calibre-debug)
+try:
+    from calibre.ebooks.oeb.polish.kepubify import (  # type: ignore
+        kepubify_html_data,
+        Options as KepubifyOptions,
+    )
+    from calibre.spell.break_iterator import sentence_positions  # type: ignore
+
+    HAS_KEPUBIFY = True
+except ImportError:
+    sentence_positions = None  # type: ignore
+    HAS_KEPUBIFY = False
+
 logger = logging.getLogger(__name__)
 
-# A regex that will most likely work on books converted with KTE plugin
+# Fallback regex for CLI mode (when calibre's sentence_positions is not available)
 REGEX_KTE = re.compile(
     r'(\s*.*?[\.\!\?\:][\'"\u201c\u201d\u2018\u2019\u2026]?\s*)',
     re.UNICODE | re.MULTILINE,
 )
+
+# Block tags that increment the paragraph counter in Kobo's numbering scheme
+BLOCK_TAGS = frozenset(("p", "ol", "ul", "table", "h1", "h2", "h3", "h4", "h5", "h6"))
+
+
+def split_into_sentences(text: str, lang: str = "en") -> List[str]:
+    """Split text into sentences using Calibre's ICU-based splitter when available."""
+    if sentence_positions is not None:
+        sentences = []
+        for pos, sz in sentence_positions(text, lang):
+            sentences.append(text[pos : pos + sz])
+        return sentences
+    else:
+        # Fallback to regex for CLI mode
+        groups = REGEX_KTE.split(text)
+        return [g for g in groups if g != ""]
+
+
+def get_block_offset_from_kepubify(
+    raw_html: bytes, block_num: int, sentence_num: int
+) -> Optional[int]:
+    """Use Calibre's kepubify to find the character offset.
+
+    Find the character offset from the start of a block to the start of a
+    specific sentence. Returns the offset, or None if the span is not found.
+    """
+    if not HAS_KEPUBIFY:
+        logger.warning("Kepubify not available")
+        return None
+
+    root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+
+    # Sum text lengths of all spans before the target sentence in this block
+    offset = 0
+    for sent in range(1, sentence_num):
+        span_id = f"kobo.{block_num}.{sent}"
+        spans = root.xpath(f'//*[@id="{span_id}"]')
+        if spans:
+            span_text = spans[0].text or ""
+            offset += len(span_text)
+            logger.debug(
+                f"Span {span_id}: len={len(span_text)}, cumulative offset={offset}"
+            )
+
+    # Verify the target span exists
+    target_span_id = f"kobo.{block_num}.{sentence_num}"
+    target_spans = root.xpath(f'//*[@id="{target_span_id}"]')
+    if not target_spans:
+        logger.warning(f"Span {target_span_id} not found in kepubified HTML")
+        return None
+
+    logger.debug(f"Found span {target_span_id}, offset from block start: {offset}")
+    return offset
+
+
+def find_text_node_at_block_offset(
+    soup: BeautifulSoup, target_block: int, char_offset: int
+) -> Optional[Tuple[bs4.element.NavigableString, int]]:
+    """Find the text node containing a character offset in a block.
+
+    Find the text node in the original document that contains the character
+    at the given offset within the specified block.
+    Returns (text_node, offset_within_node) or None.
+    """
+    # Find the Nth block element
+    block_num = 0
+    target_element = None
+
+    for elem in soup.body.descendants:
+        if isinstance(elem, bs4.element.Tag):
+            tagname = elem.name.lower() if elem.name else ""
+            if tagname in BLOCK_TAGS:
+                block_num += 1
+                if block_num == target_block:
+                    target_element = elem
+                    break
+
+    if target_element is None:
+        logger.warning(f"Block {target_block} not found in document")
+        return None
+
+    # Now find the text node containing the character at char_offset
+    # by iterating through all text descendants of this block
+    cumulative_offset = 0
+    for node in target_element.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
+            continue
+
+        text = str(node)
+        node_len = len(text)
+
+        if cumulative_offset + node_len >= char_offset:
+            # This node contains our target character
+            offset_in_node = char_offset - cumulative_offset
+            logger.debug(
+                f"Found text node at offset {char_offset}: "
+                f"node_offset={offset_in_node}, text={repr(text[:50])}"
+            )
+            return (node, offset_in_node)
+
+        cumulative_offset += node_len
+
+    logger.warning(
+        f"Offset {char_offset} not found in block {target_block} "
+        f"(block has {cumulative_offset} chars)"
+    )
+    return None
 
 
 def get_spine_index_map(
@@ -41,7 +163,7 @@ def get_spine_index_map(
         spine_ids = [
             s["idref"]
             for s in soup.package.spine.children
-            if type(s) == bs4.element.Tag
+            if isinstance(s, bs4.element.Tag)
         ]
         spine_index = {idref: i for i, idref in enumerate(spine_ids)}
 
@@ -51,7 +173,7 @@ def get_spine_index_map(
         hrefs = [
             s
             for s in soup.package.manifest
-            if type(s) == bs4.element.Tag
+            if isinstance(s, bs4.element.Tag)
             and "application/xhtml" in s["media-type"]
             and (s["id"] in spine_ids)
         ]
@@ -80,6 +202,7 @@ def process_calibre_epub_from_kobo(
     book_calibre_epub: pathlib.Path,
     book_id: int,
     highlights: List[db.KoboSourceHighlight],
+    kepub_format: str = "new",
 ) -> List[db.CalibreTargetHighlight]:
     """Process a calibre epub file and return a list of highlights."""
     result = []
@@ -96,13 +219,12 @@ def process_calibre_epub_from_kobo(
 
                 count = 0
                 for i, h in enumerate(highlights):
-
                     if h.content_path in fixed_path:
                         highlights[i] = highlights[i]._replace(
                             content_path=fixed_path[h.content_path]
                         )
                     calibre_target_highlight = parse_kobo_highlights(
-                        tmpdirname, h, book_id, spine_index_map
+                        tmpdirname, h, book_id, spine_index_map, kepub_format
                     )
                     if calibre_target_highlight:
                         result.append(calibre_target_highlight)
@@ -111,8 +233,7 @@ def process_calibre_epub_from_kobo(
                 logger.debug(f"..found {count} highlights")
             except Exception as e:
                 logger.error(
-                    f"..failed to convert the highlights: {e} "
-                    f"book: {book_calibre_epub}"
+                    f"..failed to convert the highlights: {e} book: {book_calibre_epub}"
                 )
     return result
 
@@ -121,6 +242,7 @@ def process_calibre_epub_from_calibre(
     book_calibre_epub: pathlib.Path,
     kobo_lpath: str,
     highlights: List[db.CalibreSourceHighlight],
+    kepub_format: str = "new",
 ):
     """Process a calibre epub file and return a list of highlights."""
     result = []
@@ -137,23 +259,22 @@ def process_calibre_epub_from_calibre(
                     logger.debug(
                         f"Skipping highlight without spine: {h.highlighted_text}"
                     )
-                soup = BeautifulSoup(
-                    open(pathlib.Path(tmpdirname) / pathlib.Path(h.spine_name)),
-                    "html.parser",
-                )
-
-                # Get text of <h1> tag
-                text = soup.h1.get_text() if soup.h1 else ""
+                spine_path = pathlib.Path(tmpdirname) / pathlib.Path(h.spine_name)
+                with open(spine_path, "rb") as f:
+                    raw_html = f.read()
+                soup = BeautifulSoup(raw_html, "html.parser")
 
                 kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
-                    soup, h.start_cfi
+                    soup, h.start_cfi, raw_html=raw_html, kepub_format=kepub_format
                 )
                 kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(
-                    soup, h.end_cfi
+                    soup, h.end_cfi, raw_html=raw_html, kepub_format=kepub_format
                 )
                 logger.debug(f"Calibre CFI: {h.start_cfi}, {h.end_cfi}")
                 logger.debug(
-                    f"Kobo CFI: {kobo_start_path}, offset: {kobo_start_offset}, {kobo_end_path}, offset: {kobo_end_offset}"
+                    f"Kobo CFI: {kobo_start_path}, "
+                    f"offset: {kobo_start_offset}, {kobo_end_path}, "
+                    f"offset: {kobo_end_offset}"
                 )
                 logger.debug(f"Text: {h.highlighted_text}")
 
@@ -211,25 +332,6 @@ def kobo_color_to_calibre_color(color: int) -> str:
     return "yellow"
 
 
-def get_prev_sentences_offset(node, n_sentences_offset) -> int:
-    """Get the offset of the previous n sentences."""
-    logger.debug(
-        "Getting prev sentences offset, node: %s, offset: %d", node, n_sentences_offset
-    )
-    groups = REGEX_KTE.split(str(node))
-    sentences = [g for g in groups if g != ""]
-
-    logger.debug("Sentences: %s", sentences)
-
-    prev_sentences_offset = 0
-    if n_sentences_offset > 1:
-        # Ensure we don't go beyond the available sentences
-        max_sentences = min(n_sentences_offset - 1, len(sentences))
-        for i in range(0, max_sentences):
-            prev_sentences_offset += len(sentences[i])
-    return prev_sentences_offset
-
-
 def encode_cfi(target_node, target_offset) -> str:
     """Encode a CFI for calibre."""
     logger.debug(
@@ -269,14 +371,72 @@ def encode_cfi(target_node, target_offset) -> str:
     return cfi
 
 
+def is_new_kepub_format(kepub_format: str) -> bool:
+    """Check if the kepub format is new or old.
+
+    Args:
+        kepub_format: Either 'new' or 'old'
+
+    Returns:
+        True if using new format (Calibre kepubify), False if old (KTE).
+    """
+    return kepub_format == "new"
+
+
+def find_text_by_kte_path(
+    soup: BeautifulSoup, target_tag: int, target_sentence: int, lang: str = "en"
+) -> Optional[Tuple[bs4.element.NavigableString, int]]:
+    """
+    Find text node using old KTE plugin's text-node counting scheme.
+
+    KTE numbered text nodes sequentially (not by blocks), and split
+    sentences with regex. Returns (text_node, char_offset_to_start_of_sentence)
+    or None if not found.
+    """
+    n_tag = 1
+
+    for child in soup.body.descendants:
+        parent_names = [p.name for p in child.parents]
+        if "figure" in parent_names:
+            continue
+
+        if (
+            not isinstance(child, bs4.element.NavigableString)
+            or isinstance(child, bs4.element.Comment)
+            or str(child) in ("\n", " ", "\u00a0")
+            or str(child).strip() == ""
+        ):
+            continue
+
+        logger.debug(f"KTE tag #{n_tag}: {repr(str(child)[:50])}...")
+
+        if n_tag == target_tag:
+            # Found the right text node, now find the sentence
+            sentences = split_into_sentences(str(child), lang)
+            if target_sentence <= len(sentences):
+                offset = sum(len(s) for s in sentences[: target_sentence - 1])
+                return (child, offset)
+            else:
+                logger.warning(
+                    f"Sentence {target_sentence} not found in tag {target_tag} "
+                    f"(only {len(sentences)} sentences)"
+                )
+                return None
+
+        n_tag += 1
+
+    logger.warning(f"KTE tag {target_tag} not found (max was {n_tag - 1})")
+    return None
+
+
 def parse_kobo_highlights(
-    book_prefix, highlight, book_id, spine_index_map
+    book_prefix, highlight, book_id, spine_index_map, kepub_format: str = "new"
 ) -> Optional[db.CalibreTargetHighlight]:
     """Parse a kobo highlight and return a calibre highlight."""
-    kobo_n_tag_start, kobo_n_sentence_start = [
+    kobo_n_start, kobo_n_sentence_start = [
         int(i) for i in highlight.start_path.split("\\.")[1:]
     ]
-    kobo_n_tag_end, kobo_n_sentence_end = [
+    kobo_n_end, kobo_n_sentence_end = [
         int(i) for i in highlight.end_path.split("\\.")[1:]
     ]
     logger.debug(
@@ -296,134 +456,158 @@ def parse_kobo_highlights(
             highlight.content_path
         )
 
-    with open(input_filename) as f:
-        soup = BeautifulSoup(f.read(), "html.parser")
+    with open(input_filename, "rb") as f:
+        raw_html = f.read()
+    # For chapter title, we still need BeautifulSoup
+    soup = BeautifulSoup(raw_html, "html.parser")
+    chapter_title = guess_chapter_title(soup)
 
-        chapter_title = guess_chapter_title(soup)
+    use_new_format = is_new_kepub_format(kepub_format)
 
-        # First find the node using KOBO notation
-        target_start_node = None
-        target_end_node = None
-        kobo_target_start_offset = highlight.start_offset
-        kobo_target_end_offset = highlight.end_offset
-        intermidiate_offset = 0
-        do_append = False
-        n_tag = 1
+    if use_new_format and HAS_KEPUBIFY:
+        # Use Calibre's kepubify to calculate offsets, then find in original doc
+        logger.debug("Using Calibre's kepubify for offset calculation")
 
-        first_parent = soup.body
+        # Get offset from block start to sentence start
+        start_sentence_offset = get_block_offset_from_kepubify(
+            raw_html, kobo_n_start, kobo_n_sentence_start
+        )
+        if start_sentence_offset is None:
+            logger.debug("Failed to find the start sentence offset")
+            return None
 
-        for child in first_parent.descendants:
-            parent_names = [p.name for p in child.parents]
-            if "figure" in parent_names:
-                continue
+        # Total offset = offset to sentence + offset within sentence
+        start_total_offset = start_sentence_offset + highlight.start_offset
+        logger.debug(
+            f"Start: block={kobo_n_start}, sentence_offset={start_sentence_offset}, "
+            f"highlight_offset={highlight.start_offset}, total={start_total_offset}"
+        )
 
-            if (
-                not isinstance(child, bs4.element.NavigableString)
-                or isinstance(child, bs4.element.Comment)
-                or str(child) == "\n"
-                or str(child) == " "
-                or str(child) == "\u00a0"  # non-breaking space, used in the tables
-                or str(child).strip() == ""
-            ):
-                continue
+        # Find the text node in the original document
+        # Note: kepubify block N corresponds to original document block N-1
+        # because kepubify consumes block 1 for whitespace at document start
+        original_block_start = kobo_n_start - 1
+        start_result = find_text_node_at_block_offset(
+            soup, original_block_start, start_total_offset
+        )
+        if not start_result:
+            logger.debug("Failed to find start text node in original document")
+            return None
+        target_start_node, start_offset_in_node = start_result
 
-            logger.debug(f"Including tag #{n_tag}: {child}")
+        # Handle end offset
+        original_block_end = kobo_n_end - 1
+        if kobo_n_start == kobo_n_end and kobo_n_sentence_start == kobo_n_sentence_end:
+            # Same sentence - just different offset
+            end_total_offset = start_sentence_offset + highlight.end_offset
+            end_result = find_text_node_at_block_offset(
+                soup, original_block_end, end_total_offset
+            )
+        else:
+            # Different sentence
+            end_sentence_offset = get_block_offset_from_kepubify(
+                raw_html, kobo_n_end, kobo_n_sentence_end
+            )
+            if end_sentence_offset is None:
+                logger.debug("Failed to find the end sentence offset")
+                return None
+            end_total_offset = end_sentence_offset + highlight.end_offset
+            end_result = find_text_node_at_block_offset(
+                soup, original_block_end, end_total_offset
+            )
 
-            if n_tag == kobo_n_tag_start:
-                target_start_node = (str(child), child)
-                child_length = len(str(child))
+        if not end_result:
+            logger.debug("Failed to find end text node in original document")
+            return None
+        target_end_node, end_offset_in_node = end_result
 
-                # Add lengths of previous sentences
-                kobo_target_start_offset += get_prev_sentences_offset(
-                    child, kobo_n_sentence_start
-                )
+        # Generate CFI using the original document structure
+        start_cfi = encode_cfi(target_start_node, start_offset_in_node)
+        end_cfi = encode_cfi(target_end_node, end_offset_in_node)
+    else:
+        # Fallback for old KTE format or when kepubify unavailable
+        logger.debug(f"Using {'old KTE' if not use_new_format else 'fallback'} format")
 
-                if kobo_n_tag_start == kobo_n_tag_end:
-                    target_end_node = target_start_node
-                    if kobo_n_sentence_start == kobo_n_sentence_end:
-                        kobo_target_end_offset += (
-                            kobo_target_start_offset - highlight.start_offset
-                        )
-                    else:
-                        kobo_target_end_offset += get_prev_sentences_offset(
-                            child, kobo_n_sentence_end
-                        )
-                    break
-                else:
-                    do_append = True
-                    intermidiate_offset += child_length
-
-            elif n_tag == kobo_n_tag_end:
-                target_end_node = (str(child), child)
-                kobo_target_end_offset += get_prev_sentences_offset(
-                    child, kobo_n_sentence_end
-                )
-                break
-
-            elif do_append:
-                intermidiate_offset += len(str(child))
-
-            n_tag += 1
-
-        if not target_start_node:
+        start_result = find_text_by_kte_path(soup, kobo_n_start, kobo_n_sentence_start)
+        if not start_result:
             logger.debug("Failed to find the target start node")
             return None
-        if not target_end_node:
-            logger.debug("Failed to find the target end node")
-            return None
 
-        start_cfi = encode_cfi(target_start_node[1], kobo_target_start_offset)
-        end_cfi = encode_cfi(target_end_node[1], kobo_target_end_offset)
+        target_start_node, sentence_start_offset = start_result
+        kobo_target_start_offset = sentence_start_offset + highlight.start_offset
 
-        unique_uuid = str(
-            uuid.uuid3(
-                uuid.NAMESPACE_DNS, f"{start_cfi}*{end_cfi}*{highlight.text})"
-            ).hex
-        )
+        if kobo_n_start == kobo_n_end:
+            target_end_node = target_start_node
+            if kobo_n_sentence_start == kobo_n_sentence_end:
+                kobo_target_end_offset = sentence_start_offset + highlight.end_offset
+            else:
+                end_result = find_text_by_kte_path(
+                    soup, kobo_n_end, kobo_n_sentence_end
+                )
+                if not end_result:
+                    logger.debug("Failed to find the target end node")
+                    return None
+                _, sentence_end_offset = end_result
+                kobo_target_end_offset = sentence_end_offset + highlight.end_offset
+        else:
+            end_result = find_text_by_kte_path(soup, kobo_n_end, kobo_n_sentence_end)
+            if not end_result:
+                logger.debug("Failed to find the target end node")
+                return None
+            target_end_node, sentence_end_offset = end_result
+            kobo_target_end_offset = sentence_end_offset + highlight.end_offset
 
-        calibre_highlight_json = {
-            "start_cfi": start_cfi,
-            "end_cfi": end_cfi,
-            "highlighted_text": highlight.text,
-            "spine_index": spine_index_map[highlight.content_path],
-            "spine_name": highlight.content_path,
-            "style": {
-                "kind": "color",
-                "type": "builtin",
-                "which": kobo_color_to_calibre_color(highlight.color),
-            },
-            "toc_family_titles": [chapter_title],
-            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "type": "highlight",
-            "uuid": unique_uuid,
-        }
+        start_cfi = encode_cfi(target_start_node, kobo_target_start_offset)
+        end_cfi = encode_cfi(target_end_node, kobo_target_end_offset)
 
-        calibre_highlight = db.CalibreTargetHighlight(
-            book_id,
-            "EPUB",
-            "local",
-            "viewer",
-            int(time.time()),
-            unique_uuid,
-            "highlight",
-            calibre_highlight_json,
-            highlight.text,
-        )
-        return calibre_highlight
+    # Common code for both branches
+    unique_uuid = str(
+        uuid.uuid3(uuid.NAMESPACE_DNS, f"{start_cfi}*{end_cfi}*{highlight.text})").hex
+    )
+
+    calibre_highlight_json = {
+        "start_cfi": start_cfi,
+        "end_cfi": end_cfi,
+        "highlighted_text": highlight.text,
+        "spine_index": spine_index_map[highlight.content_path],
+        "spine_name": highlight.content_path,
+        "style": {
+            "kind": "color",
+            "type": "builtin",
+            "which": kobo_color_to_calibre_color(highlight.color),
+        },
+        "toc_family_titles": [chapter_title],
+        "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "type": "highlight",
+        "uuid": unique_uuid,
+    }
+
+    calibre_highlight = db.CalibreTargetHighlight(
+        book_id,
+        "EPUB",
+        "local",
+        "viewer",
+        int(time.time()),
+        unique_uuid,
+        "highlight",
+        calibre_highlight_json,
+        highlight.text,
+    )
+    return calibre_highlight
 
 
 def decode_calibre_cfi(
     soup: BeautifulSoup, cfi: str
-) -> (bs4.element.NavigableString, int):
-    """
-    Decodes a Calibre CFI string and returns the target NavigableString and its character offset.
+) -> Tuple[bs4.element.NavigableString, int]:
+    """Decode a Calibre CFI string.
 
+    Returns the target NavigableString and its character offset.
     The Calibre CFI format is expected to have slash-separated segments.
-    The intermediate segments (e.g. /2/4/2[id1]/4) are encoded using even numbers.
-    The final segment is of the form '/<node_index>:<offset>', where node_index is counted among
-    all children (including non-tags), starting at 1.
+    The intermediate segments (e.g. /2/4/2[id1]/4) are encoded using even
+    numbers. The final segment is of the form '/<node_index>:<offset>',
+    where node_index is counted among all children (including non-tags),
+    starting at 1.
     """
-
     parts = cfi.strip().split("/")
     if len(parts) < 2:
         raise ValueError("Invalid CFI string")
@@ -449,7 +633,8 @@ def decode_calibre_cfi(
         ]
 
         logger.debug(
-            f"Processing segment '{part}': current_node={current_node.name}, children_count={len(children)}, child_index={child_index}"
+            f"Processing segment '{part}': current_node={current_node.name}, "
+            f"children_count={len(children)}, child_index={child_index}"
         )
 
         if child_index < 0 or child_index >= len(children):
@@ -468,7 +653,8 @@ def decode_calibre_cfi(
         raise ValueError("Invalid final segment in CFI: " + final_segment)
     sibling_number = int(m.group(1))
     offset = int(m.group(2))
-    # For the final segment, we use the parent’s full list of children (including strings)
+    # For the final segment, we use the parent's full list of children
+    # (including strings)
     siblings = list(current_node.children)
     if sibling_number < 1 or sibling_number > len(siblings):
         raise IndexError("Sibling index out of bounds in final segment")
@@ -478,9 +664,99 @@ def decode_calibre_cfi(
     return target_node, offset
 
 
-def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
+def find_block_and_sentence_for_offset_new_format(
+    raw_html: bytes,
+    soup: BeautifulSoup,
+    target_node: bs4.element.NavigableString,
+    overall_offset: int,
+) -> Optional[Tuple[int, int, int]]:
     """
-    Converts a Calibre CFI to a Kobo reader CFI.
+    Find the kepubify block number and sentence for a target offset.
+
+    This works by:
+    1. Finding which block element contains the target node
+    2. Calculating the character offset from the block start
+    3. Using kepubify to find which sentence contains that offset
+
+    Returns (block_num, sentence_num, offset_in_sentence) or None.
+    """
+    if not HAS_KEPUBIFY:
+        return None
+
+    # Find which block element contains the target node
+    # Use identity comparison (is) rather than equality (in) because
+    # multiple text nodes may have the same content (e.g., ".")
+    block_num = 0
+    containing_block = None
+    for elem in soup.body.descendants:
+        if isinstance(elem, bs4.element.Tag) and elem.name.lower() in BLOCK_TAGS:
+            block_num += 1
+            # Check if target_node is a descendant of this block using identity
+            for desc in elem.descendants:
+                if desc is target_node:
+                    containing_block = elem
+                    break
+            if containing_block:
+                break
+
+    if containing_block is None:
+        logger.warning("Could not find containing block for target node")
+        return None
+
+    # Calculate offset from block start to target position
+    char_offset_in_block = 0
+    for node in containing_block.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
+            continue
+
+        if node is target_node:
+            char_offset_in_block += overall_offset
+            break
+        char_offset_in_block += len(str(node))
+
+    # kepubify block N corresponds to original block N-1, so we add 1
+    kepub_block_num = block_num + 1
+
+    # Now use kepubify to find which sentence contains this offset
+    root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+
+    # Find all spans in this block
+    cumulative_offset = 0
+    for sent_num in range(1, 100):  # reasonable upper limit
+        span_id = f"kobo.{kepub_block_num}.{sent_num}"
+        spans = root.xpath(f'//*[@id="{span_id}"]')
+        if not spans:
+            break
+
+        span_text = spans[0].text or ""
+        span_len = len(span_text)
+
+        # Use >= to handle end positions that point just past the last character
+        if cumulative_offset + span_len >= char_offset_in_block:
+            offset_in_sentence = char_offset_in_block - cumulative_offset
+            return (kepub_block_num, sent_num, offset_in_sentence)
+
+        cumulative_offset += span_len
+
+    logger.warning(
+        f"Could not find sentence for offset {char_offset_in_block} "
+        f"in block {kepub_block_num}"
+    )
+    return None
+
+
+def convert_calibre_cfi_to_kobo(
+    soup: BeautifulSoup, cfi: str, raw_html: bytes = None, kepub_format: str = "old"
+) -> Tuple[str, int]:
+    r"""Convert a Calibre CFI to a Kobo reader CFI.
+
+    Args:
+        soup: BeautifulSoup of the HTML document
+        cfi: Calibre CFI string
+        raw_html: Raw HTML bytes (required for new format)
+        kepub_format: 'old' for KTE plugin format, 'new' for Calibre kepubify format
 
     Returns a tuple:
       (kobo_path, kobo_offset)
@@ -491,12 +767,26 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
     # Decode the Calibre CFI first to obtain the target text node and overall offset
     target_node, overall_offset = decode_calibre_cfi(soup, cfi)
 
-    # Traverse the document to get the Kobo text node index.
-    # This simulates the original Kobo conversion where only non-empty text nodes (ignoring whitespace,
-    # newlines, &#160; etc.) are counted.
+    use_new_format = is_new_kepub_format(kepub_format)
+
+    if use_new_format and raw_html and HAS_KEPUBIFY:
+        # Use block-based counting for new kepubify format
+        result = find_block_and_sentence_for_offset_new_format(
+            raw_html, soup, target_node, overall_offset
+        )
+        if result:
+            block_num, sentence_num, offset_in_sentence = result
+            kobo_path = f"span#kobo\\.{block_num}\\.{sentence_num}"
+            return kobo_path, offset_in_sentence
+        else:
+            logger.warning(
+                "Failed to find block/sentence for new format, falling back to old"
+            )
+
+    # Old KTE format or fallback: count text nodes sequentially
     n_tag = 1
     found = False
-    # For Kobo, we start with the body tag right away
+
     for child in soup.body.descendants:
         # Skip non-text nodes, comments, or nodes with only whitespace.
         if not isinstance(child, bs4.element.NavigableString) or isinstance(
@@ -506,12 +796,12 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
         text = str(child)
         if text in ("\n", " ", "\u00a0") or text.strip() == "":
             continue
-        # You may want to further exclude nodes that are within a <figure> (as in your original code)
+        # Exclude nodes within a <figure>
         parent_names = [p.name for p in child.parents if isinstance(p, bs4.element.Tag)]
         if "figure" in parent_names:
             continue
 
-        if child == target_node:
+        if child is target_node:
             found = True
             break
         n_tag += 1
@@ -520,14 +810,13 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
         raise ValueError("Target text node not found among the valid text nodes")
 
     # Now, using the text content, split it into sentences.
-    # The logic here mimics your get_prev_sentences_offset: it traverses the list
-    # of sentences until the cumulative length exceeds overall_offset.
-    sentences = [seg for seg in REGEX_KTE.split(str(target_node)) if seg != ""]
+    # Find which sentence the offset falls in.
+    sentences = split_into_sentences(str(target_node))
     cumulative = 0
     kobo_sentence = 1
     kobo_offset = 0
     for sentence in sentences:
-        if cumulative + len(sentence) > overall_offset:
+        if cumulative + len(sentence) >= overall_offset:
             kobo_offset = overall_offset - cumulative
             break
         cumulative += len(sentence)
@@ -537,16 +826,14 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
         kobo_offset = overall_offset - cumulative
 
     # Construct the Kobo path.
-    # The standard format (as derived from your original Kobo example) is:
-    #   "span#kobo\.{n_tag}\.{n_sentence}"
-    # Use double escapes for the dots.
+    # The standard format is: "span#kobo\.{n_tag}\.{n_sentence}"
     kobo_path = f"span#kobo\\.{n_tag}\\.{kobo_sentence}"
 
     return kobo_path, kobo_offset
 
 
 def guess_chapter_title(soup):
-
+    """Guess the chapter title from the HTML soup."""
     # 2. Look for <h1> as it's common for chapter headings
     h1 = soup.find("h1")
     if h1 and h1.get_text():
@@ -561,7 +848,8 @@ def guess_chapter_title(soup):
         if h2_text:
             return h2_text
 
-    # 4. As a fallback, try to see if there's a div with a class indicating chapter title
+    # 4. As a fallback, try to see if there's a div with a class
+    # indicating chapter title
     possible_titles = soup.find_all("div", class_="chapter-title")
     for div in possible_titles:
         text = div.get_text().strip()

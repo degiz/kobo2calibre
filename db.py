@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 logger = logging.getLogger(__name__)
 
 KoboSourceHighlight = namedtuple(
-    "KoboHighlight",
+    "KoboSourceHighlight",
     [
         "start_path",
         "end_path",
@@ -22,7 +22,7 @@ KoboSourceHighlight = namedtuple(
 )
 
 CalibreTargetHighlight = namedtuple(
-    "CalibreHighlight",
+    "CalibreTargetHighlight",
     [
         "book",
         "format",
@@ -70,6 +70,7 @@ def get_calibre_book_id(kobo_volume: pathlib.Path, lpath: str) -> int:
 
 
 def get_kobo_content_path_by_book_id(kobo_volume: pathlib.Path, book_id: int) -> str:
+    """Get the kobo content path by book id."""
     calibre_device_metadata = kobo_volume.resolve() / "metadata.calibre"
     logger.debug(f"Looking for book id {book_id} in {calibre_device_metadata}")
     with open(calibre_device_metadata) as f:
@@ -121,7 +122,7 @@ def get_dictinct_highlights_from_kobo(
     con = sqlite3.connect(input_kobo_db)
     cur = con.cursor()
 
-    result = {}
+    result: Dict[str, List[KoboSourceHighlight]] = {}
     for distinct_name in cur.execute("SELECT DISTINCT `VolumeID` FROM `Bookmark`"):
         name = distinct_name[0]
         if name not in result:
@@ -129,7 +130,7 @@ def get_dictinct_highlights_from_kobo(
 
         cur1 = con.cursor()
         for row in cur1.execute(
-            f"SELECT * FROM `Bookmark` WHERE `VolumeID` = '{name}' AND text !=''"
+            f'SELECT * FROM "Bookmark" WHERE "VolumeID" = {repr(name)} AND text !=""'
         ):
             content_path = row[2].split("epub!")[-1]
             content_path = content_path.lstrip("!")
@@ -163,7 +164,8 @@ def get_highlights_from_calibre_by_book_id(
 
     result = []
     for query_result in cur.execute(
-        f"SELECT `annot_data` FROM `annotations` WHERE `book` = '{book_id}' and `user_type` = 'local'",
+        f'SELECT "annot_data" FROM "annotations" '
+        f'WHERE "book" = {repr(book_id)} and "user_type" = \'local\'',
     ):
         annot_data = json.loads(query_result[0])
 
@@ -192,9 +194,9 @@ def get_distinct_highlights_from_calibre(
     con = sqlite3.connect(input_calibre_db)
     cur = con.cursor()
 
-    result = {}
+    result: Dict[int, List[CalibreSourceHighlight]] = {}
     for query_result in cur.execute(
-        f"SELECT `annot_data`, `book` FROM `annotations` WHERE `user_type` = 'local'",
+        "SELECT `annot_data`, `book` FROM `annotations` WHERE `user_type` = 'local'",
     ):
         annot_data = json.loads(query_result[0])
         book = query_result[1]
@@ -227,7 +229,7 @@ def get_highlights_from_kobo_by_book(
 
     cur1 = con.cursor()
     for row in cur1.execute(
-        f"SELECT * FROM `Bookmark` WHERE `VolumeID` = '{book}' AND text !=''"
+        f'SELECT * FROM "Bookmark" WHERE "VolumeID" = {repr(book)} AND text !=""'
     ):
         content_path = row[2].split("epub!")[-1]
         content_path = content_path.lstrip("!")
@@ -255,7 +257,6 @@ def insert_highlights_into_calibre(
 
     actually_inserted_count = 0
     for h in books_highlights:
-
         # check for duplicates
         if cur.execute(
             f"SELECT id from annotations where annot_id = '{h.annot_id}'"
@@ -309,9 +310,8 @@ def insert_highlights_into_kobo(
 
     actually_inserted_count = 0
     for h in highlights:
-
         if cur.execute(
-            f"SELECT `BookmarkID` from `Bookmark` where `BookmarkID` = '{h.uuid}'"
+            f'SELECT "BookmarkID" from "Bookmark" where "BookmarkID" = {repr(h.uuid)}'
         ).fetchone():
             logger.debug(
                 f"Annotation with id {h.uuid} (from {h.volume_id}) already exists in db"

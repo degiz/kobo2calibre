@@ -5,10 +5,10 @@ import pathlib
 
 try:
     # For calibre gui plugin
-    from calibre_plugins.kobo2calibre import (
+    from calibre_plugins.kobo2calibre import (  # type: ignore
         converter,
-    )  # pyright: reportMissingImports=false
-    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+    )
+    from calibre_plugins.kobo2calibre import db  # type: ignore
 except ImportError:
     # For cli
     import converter  # type: ignore
@@ -38,9 +38,11 @@ def main(args) -> None:
     calibre_db = pathlib.Path(args.calibre_library).resolve() / "metadata.db"
     kobo_db = pathlib.Path(args.kobo_volume).resolve() / ".kobo" / "KoboReader.sqlite"
 
+    # Use kepub_format from args, default to 'new'
+    kepub_format = getattr(args, "kepub_format", "new")
+
     to_insert = []
     for volume, highlights in db.get_dictinct_highlights_from_kobo(kobo_db).items():
-
         likely_book_id, likely_book_path = db.get_likely_book_path_from_calibre(
             calibre_db, pathlib.Path(args.kobo_volume), volume
         )
@@ -60,7 +62,7 @@ def main(args) -> None:
 
         to_insert.extend(
             converter.process_calibre_epub_from_kobo(
-                book_calibre_epub, likely_book_id, highlights
+                book_calibre_epub, likely_book_id, highlights, kepub_format
             )
         )
 
@@ -113,6 +115,14 @@ if __name__ == "__main__":
         "--filter_bookname",
         type=str,
         help="Filter only books matching a filter",
+        required=False,
+    )
+    parser.add_argument(
+        "--kepub_format",
+        type=str,
+        choices=["new", "old"],
+        default="new",
+        help="Kepub format: 'new' for Calibre kepubify (default), 'old' for KTE plugin",
         required=False,
     )
     parser.add_argument("--debug", "-vv", action="store_true")

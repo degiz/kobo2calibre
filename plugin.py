@@ -1,19 +1,20 @@
 from pathlib import Path
 from typing import Any, List, Tuple
 
-from calibre.gui2.actions import InterfaceAction
-from calibre.gui2.library.views import DeviceBooksView
-from PyQt6 import QtWidgets
+from calibre.gui2.actions import InterfaceAction  # type: ignore
+from calibre.gui2.library.views import DeviceBooksView  # type: ignore
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 try:
     # For calibre gui plugin
-    from calibre_plugins.kobo2calibre import (
-        converter,  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import (  # type: ignore
+        converter,
     )
-    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import db  # type: ignore
 except ImportError:
     # For local calibre debug
-    import sys, os
+    import os
+    import sys
 
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     import converter  # type: ignore
@@ -32,8 +33,14 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         """Initialize the dialog."""
         super(Kobo2CalibreDialog, self).__init__(gui)
         self.gui = gui
-        self.warnings = []
-        self.info = []
+        self.warnings: List[str] = []
+        self.info: List[Any] = []  # Now stores dicts
+        self.kepub_format = "new"  # Default value
+
+        # Set dialog properties
+        self.setWindowTitle("Kobo2Calibre - Import Highlights")
+        self.setMinimumWidth(550)
+        self.setMinimumHeight(350)
 
         # For debugging
         # kobo2calibre.configure_file_logging(None)
@@ -52,51 +59,284 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
 
     def _abort(self, message: str) -> None:
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(QtWidgets.QLabel(message))
-        layout.addWidget(
-            QtWidgets.QDialogButtonBox(
-                QtWidgets.QDialogButtonBox.StandardButton.Ok,
-                accepted=self.accept,
-                parent=self,
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Error icon and message
+        error_widget = QtWidgets.QWidget()
+        error_layout = QtWidgets.QHBoxLayout(error_widget)
+        error_layout.setContentsMargins(0, 0, 0, 0)
+
+        icon_label = QtWidgets.QLabel()
+        style = self.style()
+        if style:
+            icon_label.setPixmap(
+                style.standardIcon(
+                    QtWidgets.QStyle.StandardPixmap.SP_MessageBoxWarning
+                ).pixmap(32, 32)
             )
+        error_layout.addWidget(icon_label)
+
+        message_label = QtWidgets.QLabel(message)
+        message_font = QtGui.QFont()
+        message_font.setBold(True)
+        message_label.setFont(message_font)
+        message_label.setWordWrap(True)
+        error_layout.addWidget(message_label, 1)
+
+        layout.addWidget(error_widget)
+
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok,
+            parent=self,
         )
+        button_box.accepted.connect(self.accept)
+        layout.addWidget(button_box)
         self.setLayout(layout)
 
     def _show_info_widget(self) -> None:
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(QtWidgets.QLabel("Info:"))
-        for info in self.info:
-            layout.addWidget(QtWidgets.QLabel(f"• {info}"))
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Info section
+        if self.info:
+            info_group = QtWidgets.QGroupBox("📚 Book Information")
+            info_group.setStyleSheet(
+                """
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 15px;
+                    border: 2px solid #4a90e2;
+                    border-radius: 8px;
+                    margin-top: 12px;
+                    padding-top: 15px;
+                    background-color: #f8fbff;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 8px;
+                    color: #2c5aa0;
+                }
+            """
+            )
+            info_layout = QtWidgets.QVBoxLayout()
+            info_layout.setSpacing(12)
+            info_layout.setContentsMargins(15, 15, 15, 15)
+
+            for book_info in self.info:
+                # Create a container for each book
+                book_widget = QtWidgets.QWidget()
+                book_layout = QtWidgets.QVBoxLayout(book_widget)
+                book_layout.setContentsMargins(0, 0, 0, 0)
+                book_layout.setSpacing(6)
+
+                # Book title - using QFont instead of HTML
+                title_label = QtWidgets.QLabel(book_info["title"])
+                title_font = QtGui.QFont()
+                title_font.setPointSize(13)
+                title_font.setBold(True)
+                title_label.setFont(title_font)
+                title_label.setStyleSheet("color: #1a1a1a;")
+                title_label.setWordWrap(True)
+                title_label.setTextInteractionFlags(
+                    QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+                )
+                book_layout.addWidget(title_label)
+
+                # Highlights info - using QHBoxLayout with styled labels
+                highlights_widget = QtWidgets.QWidget()
+                highlights_layout = QtWidgets.QHBoxLayout(highlights_widget)
+                highlights_layout.setContentsMargins(10, 0, 0, 0)
+                highlights_layout.setSpacing(5)
+
+                # "Highlights:" label
+                prefix_label = QtWidgets.QLabel("Highlights:")
+                prefix_font = QtGui.QFont()
+                prefix_font.setPointSize(11)
+                prefix_label.setFont(prefix_font)
+                prefix_label.setStyleSheet("color: #666;")
+                highlights_layout.addWidget(prefix_label)
+
+                # Kobo count
+                kobo_label = QtWidgets.QLabel(str(book_info["kobo_count"]))
+                kobo_font = QtGui.QFont()
+                kobo_font.setPointSize(11)
+                kobo_font.setBold(True)
+                kobo_label.setFont(kobo_font)
+                kobo_label.setStyleSheet("color: #e74c3c;")
+                highlights_layout.addWidget(kobo_label)
+
+                # "in Kobo" text
+                kobo_text = QtWidgets.QLabel("in Kobo")
+                kobo_text.setFont(prefix_font)
+                kobo_text.setStyleSheet("color: #666;")
+                highlights_layout.addWidget(kobo_text)
+
+                # Bullet separator
+                bullet_label = QtWidgets.QLabel("•")
+                bullet_label.setFont(prefix_font)
+                bullet_label.setStyleSheet("color: #666;")
+                highlights_layout.addWidget(bullet_label)
+
+                # Calibre count
+                calibre_label = QtWidgets.QLabel(str(book_info["calibre_count"]))
+                calibre_font = QtGui.QFont()
+                calibre_font.setPointSize(11)
+                calibre_font.setBold(True)
+                calibre_label.setFont(calibre_font)
+                calibre_label.setStyleSheet("color: #27ae60;")
+                highlights_layout.addWidget(calibre_label)
+
+                # "in Calibre" text
+                calibre_text = QtWidgets.QLabel("in Calibre")
+                calibre_text.setFont(prefix_font)
+                calibre_text.setStyleSheet("color: #666;")
+                highlights_layout.addWidget(calibre_text)
+
+                highlights_layout.addStretch()
+                book_layout.addWidget(highlights_widget)
+
+                info_layout.addWidget(book_widget)
+
+                # Add a subtle separator between books (except for the last one)
+                if book_info != self.info[-1]:
+                    separator = QtWidgets.QFrame()
+                    separator.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+                    separator.setStyleSheet("background-color: #e0e0e0; margin: 5px 0;")
+                    separator.setMaximumHeight(1)
+                    info_layout.addWidget(separator)
+
+            info_group.setLayout(info_layout)
+            layout.addWidget(info_group)
+
+        # Warnings section
         if self.warnings:
-            layout.addWidget(QtWidgets.QLabel("Warnings:"))
+            warning_group = QtWidgets.QGroupBox("⚠️  Warnings")
+            warning_group.setStyleSheet(
+                """
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 15px;
+                    border: 2px solid #f39c12;
+                    border-radius: 8px;
+                    margin-top: 12px;
+                    padding-top: 15px;
+                    background-color: #fff9e6;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 8px;
+                    color: #c87f0a;
+                }
+            """
+            )
+            warning_layout = QtWidgets.QVBoxLayout()
+            warning_layout.setSpacing(8)
+            warning_layout.setContentsMargins(15, 15, 15, 15)
+
             for warning in self.warnings:
-                layout.addWidget(QtWidgets.QLabel(f"• {warning}"))
+                warning_label = QtWidgets.QLabel(f"• {warning}")
+                warning_font = QtGui.QFont()
+                warning_font.setPointSize(11)
+                warning_label.setFont(warning_font)
+                warning_label.setStyleSheet("color: #856404;")
+                warning_label.setWordWrap(True)
+                warning_label.setTextInteractionFlags(
+                    QtCore.Qt.TextInteractionFlag.TextSelectableByMouse
+                )
+                warning_layout.addWidget(warning_label)
+
+            warning_group.setLayout(warning_layout)
+            layout.addWidget(warning_group)
+
+        # Options section
+        options_group = QtWidgets.QGroupBox("⚙️  Options")
+        options_group.setStyleSheet(
+            """
+            QGroupBox {
+                font-weight: bold;
+                font-size: 15px;
+                border: 2px solid #95a5a6;
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 15px;
+                background-color: #f8f9fa;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px;
+                color: #5a6c7d;
+            }
+            QCheckBox {
+                font-size: 11pt;
+                color: #2c3e50;
+            }
+        """
+        )
+        options_layout = QtWidgets.QVBoxLayout()
+        options_layout.setContentsMargins(15, 15, 15, 15)
+
+        self.kepub_checkbox = QtWidgets.QCheckBox(
+            "Use old KTE plugin format (uncheck for new Calibre kepubify format)"
+        )
+        self.kepub_checkbox.setChecked(False)  # Default to new format
+        self.kepub_checkbox.stateChanged.connect(self._on_kepub_format_changed)
+        options_layout.addWidget(self.kepub_checkbox)
+
+        options_group.setLayout(options_layout)
+        layout.addWidget(options_group)
+
+        # Spacer
+        layout.addStretch()
+
+        # Action section
         buttons = None
         if self.to_process_from_kobo:
-            layout.addWidget(QtWidgets.QLabel("\nProceed?"))
             buttons = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.StandardButton.Ok
                 | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
-                accepted=self._do_import,
-                rejected=self.reject,
                 parent=self,
             )
+            ok_button = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
+            if ok_button:
+                ok_button.setText("Import Highlights")
+            buttons.accepted.connect(self._do_import)
+            buttons.rejected.connect(self.reject)
         else:
-            layout.addWidget(QtWidgets.QLabel("\nNo books to process"))
+            no_books_label = QtWidgets.QLabel("No books to process")
+            no_books_font = QtGui.QFont()
+            no_books_font.setPointSize(13)
+            no_books_font.setBold(True)
+            no_books_label.setFont(no_books_font)
+            no_books_label.setStyleSheet("color: #95a5a6;")
+            no_books_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(no_books_label)
+
             buttons = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.StandardButton.Ok,
-                accepted=self.accept,
                 parent=self,
             )
+            buttons.accepted.connect(self.accept)
+
         layout.addWidget(buttons)
         self.setLayout(layout)
 
-    def _do_import(self) -> None:
+    def _on_kepub_format_changed(self, state: int) -> None:
+        """Handle checkbox state change."""
+        self.kepub_format = "old" if state == 2 else "new"  # Qt.CheckState.Checked == 2
 
+    def _do_import(self) -> None:
+        # Use the kepub format from the checkbox
         to_insert_from_kobo = []
         for book, highlights in self.to_process_from_kobo:
             to_insert_from_kobo.extend(
-                converter.process_calibre_epub_from_kobo(book[2], book[1], highlights)
+                converter.process_calibre_epub_from_kobo(
+                    book[2], book[1], highlights, self.kepub_format
+                )
             )
         n_inserted_from_kobo = db.insert_highlights_into_calibre(
             self._calibre_db_path(), to_insert_from_kobo
@@ -125,7 +365,6 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         )
 
     def _process_selected_rows(self):
-
         # We're in library view
         calibre_books, books_with_no_epubs = self._get_books_from_selected_rows()
 
@@ -154,8 +393,13 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             highlights_from_kobo = db.get_highlights_from_kobo_by_book(
                 self._kobo_db_path(), book[3]
             )
+            # Store structured info for better formatting
             self.info.append(
-                f'Book "{book[0]}" has {len(highlights_from_kobo)} highlights in Kobo'
+                {
+                    "title": book[0],
+                    "kobo_count": len(highlights_from_kobo),
+                    "calibre_count": 0,  # Will be updated below
+                }
             )
             result_from_kobo.append((book, highlights_from_kobo))
 
@@ -164,14 +408,12 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 self._calibre_db_path(), book[1]
             )
             result_from_calibre.append((book, highlights_from_calibre))
-            self.info.append(
-                f'Book "{book[0]}" has {len(highlights_from_calibre)} highlights in Calibre'
-            )
+            # Update the calibre count in the last info entry
+            self.info[-1]["calibre_count"] = len(highlights_from_calibre)
 
         return result_from_kobo, result_from_calibre
 
     def _get_books_from_selected_rows(self) -> Tuple[List[Any], List[str]]:
-
         rows = self.gui.library_view.selectionModel().selectedRows()
         if not rows or len(rows) < 1:
             return ([], [])

@@ -1,0 +1,78 @@
+[
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.2\\.5",
+      "EndContainerPath": "span#kobo\\.2\\.7",
+      "StartOffset": 23,
+      "EndOffset": 45,
+      "Text": "gainsay. Therefore, it has seemed to me particularly timely to introduce",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-2.htm.xhtml",
+      "Color": 0
+    },
+    "expected": {
+      "start_cfi": "/2/4/4/1:240",
+      "end_cfi": "/2/4/4/1:312",
+      "highlighted_text": "gainsay. Therefore, it has seemed to me particularly timely to introduce",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-2.htm.xhtml",
+      "spine_index": 3,
+      "color": "yellow"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.5\\.4",
+      "EndContainerPath": "span#kobo\\.6\\.1",
+      "StartOffset": 30,
+      "EndOffset": 9,
+      "Text": "unscientific.\n\nTo add to",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-3.htm.xhtml",
+      "Color": 3
+    },
+    "expected": {
+      "start_cfi": "/2/4/8/3:198",
+      "end_cfi": "/2/4/10/1:9",
+      "highlighted_text": "unscientific.\n\nTo add to",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
+      "spine_index": 4,
+      "color": "green"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.75\\.3",
+      "EndContainerPath": "span#kobo\\.77\\.1",
+      "StartOffset": 8,
+      "EndOffset": 1,
+      "Text": "is often compared with that of hunger, and this craving and need lying in all humanity is called by Freud libido.",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-3.htm.xhtml",
+      "Color": 2
+    },
+    "expected": {
+      "start_cfi": "/2/4/90/3:65",
+      "end_cfi": "/2/4/90/5:1",
+      "highlighted_text": "is often compared with that of hunger, and this craving and need lying in all humanity is called by Freud libido.",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
+      "spine_index": 4,
+      "color": "blue"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.99\\.4",
+      "EndContainerPath": "span#kobo\\.101\\.1",
+      "StartOffset": 11,
+      "EndOffset": 13,
+      "Text": "and reality of our being.\u201d[2]\n\nIn developing",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-3.htm.xhtml",
+      "Color": 1
+    },
+    "expected": {
+      "start_cfi": "/2/4/116/1:180",
+      "end_cfi": "/2/4/118/1:13",
+      "highlighted_text": "and reality of our being.\u201d[2]\n\nIn developing",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
+      "spine_index": 4,
+      "color": "purple"
+    }
+  }
+]

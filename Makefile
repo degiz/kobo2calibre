@@ -1,3 +1,5 @@
+.PHONY: build run debug test format lint
+
 build:
 	zip Kobo2Calibre.zip \
 		converter.py \
@@ -15,5 +17,13 @@ debug:
 	calibre-customize -b $(shell pwd); calibre-debug -g
 
 test:
-	flake8 .
+	calibre-debug test/run_tests.py
+
+lint:
+	ruff check .
 	rm -rf .mypy_cache && mypy . --explicit-package-bases --namespace-packages
+
+format:
+	ruff format .
+	
+
