@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """Test runner for use with calibre-debug."""
+
 import sys
 import unittest
 from pathlib import Path

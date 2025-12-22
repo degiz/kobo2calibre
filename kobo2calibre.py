@@ -43,7 +43,6 @@ def main(args) -> None:
 
     to_insert = []
     for volume, highlights in db.get_dictinct_highlights_from_kobo(kobo_db).items():
-
         likely_book_id, likely_book_path = db.get_likely_book_path_from_calibre(
             calibre_db, pathlib.Path(args.kobo_volume), volume
         )

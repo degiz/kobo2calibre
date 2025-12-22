@@ -219,7 +219,6 @@ def process_calibre_epub_from_kobo(
 
                 count = 0
                 for i, h in enumerate(highlights):
-
                     if h.content_path in fixed_path:
                         highlights[i] = highlights[i]._replace(
                             content_path=fixed_path[h.content_path]
@@ -234,8 +233,7 @@ def process_calibre_epub_from_kobo(
                 logger.debug(f"..found {count} highlights")
             except Exception as e:
                 logger.error(
-                    f"..failed to convert the highlights: {e} "
-                    f"book: {book_calibre_epub}"
+                    f"..failed to convert the highlights: {e} book: {book_calibre_epub}"
                 )
     return result
 

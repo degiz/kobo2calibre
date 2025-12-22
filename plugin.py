@@ -106,7 +106,6 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         self.kepub_format = "old" if state == 2 else "new"  # Qt.CheckState.Checked == 2
 
     def _do_import(self) -> None:
-
         # Use the kepub format from the checkbox
         to_insert_from_kobo = []
         for book, highlights in self.to_process_from_kobo:
@@ -142,7 +141,6 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         )
 
     def _process_selected_rows(self):
-
         # We're in library view
         calibre_books, books_with_no_epubs = self._get_books_from_selected_rows()
 
@@ -189,7 +187,6 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         return result_from_kobo, result_from_calibre
 
     def _get_books_from_selected_rows(self) -> Tuple[List[Any], List[str]]:
-
         rows = self.gui.library_view.selectionModel().selectedRows()
         if not rows or len(rows) < 1:
             return ([], [])

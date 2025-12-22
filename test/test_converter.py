@@ -99,8 +99,7 @@ class TestConverter(unittest.TestCase):
                         self.assertEqual(
                             result_data["end_cfi"],
                             expected["end_cfi"],
-                            f"End CFI mismatch for "
-                            f"'{joined['kobo']['Text'][:30]}...'",
+                            f"End CFI mismatch for '{joined['kobo']['Text'][:30]}...'",
                         )
 
                         # Verify text matches

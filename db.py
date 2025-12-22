@@ -256,7 +256,6 @@ def insert_highlights_into_calibre(
 
     actually_inserted_count = 0
     for h in books_highlights:
-
         # check for duplicates
         if cur.execute(
             f"SELECT id from annotations where annot_id = '{h.annot_id}'"
@@ -310,7 +309,6 @@ def insert_highlights_into_kobo(
 
     actually_inserted_count = 0
     for h in highlights:
-
         if cur.execute(
             f'SELECT "BookmarkID" from "Bookmark" where "BookmarkID" = {repr(h.uuid)}'
         ).fetchone():

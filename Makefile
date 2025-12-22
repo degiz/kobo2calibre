@@ -20,10 +20,10 @@ test:
 	calibre-debug test/run_tests.py
 
 lint:
-	flake8 .
+	ruff check .
 	rm -rf .mypy_cache && mypy . --explicit-package-bases --namespace-packages
 
 format:
-	black .
+	ruff format .
 	
 
