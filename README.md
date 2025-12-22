@@ -1,42 +1,37 @@
 # kobo2Calibre
 
-Embed highlights from Kobo device in Calibre book, and wise-versa. Tested on the books converted using [calibre-kobo-driver](https://github.com/jgoguen/calibre-kobo-driver). Books converted using a different tool will most probably not work.
+Embed highlights from Kobo device into Calibre and wise-versa.
 
-The plugin will:
+Supports kepubs created with the KTE plugin or native Calibre kepubify (version 8+).
 
-- import your highlights from the Kobo device DB
-- try to match the highlights with books from your Calibre library
-- insert highlights into the Calibre database so that you can further edit them using a fantastic Calibre book viewer
-- and the same the other way around
+## Installation
 
-# Installation as Calibre plugin
+1. Download the latest `Kobo2Calibre.zip` from the [releases page](https://github.com/degiz/kobo2calibre/releases)
+2. In Calibre, go to **Preferences** → **Plugins** → **Load plugin from file**
+3. Select the downloaded zip file and restart Calibre
+4. Add the plugin button to your toolbar: **Preferences** → **Toolbars** → drag the plugin to `toolbar when a device is connected`
 
-Check the releases section, and download the latest `Kobo2Calibre.zip`. Install it as any other Calibre plugin. Make sure to add the plugin to `toolbar when a device is connected`.
+## Usage
 
-# Installation for CLI usage
+1. Connect your Kobo device to your computer
+2. In Calibre, select a book
+3. Click the kobo2Calibre button in the toolbar
+4. Transfer highlights
 
-You can use `poetry install` to install all the dependencies:
+## Configuration
 
-```bash
-poetry update && poetry install
-```
+When using the plugin, you'll see a checkbox to select your kepub format:
 
-## Usage of CLI
+- **New format** (recommended): For kepubs created with native Calibre kepubify (Calibre 8+)
+- **Old format**: For kepubs created with the KTE plugin
 
-**Warning: this script is in the alpha stage; please back up your Calibre library before using it!**
+**Not sure which to choose?** If you're using Calibre 8 or newer and haven't installed the KTE plugin separately, use the new format.
 
-Example:
 
-```bash
-poetry run python kobo2calibre.py {PATH_TO_KOBO_DEVICE} {PATH_TO_CALIBRE_LIBRARY}
-```
+## Support
 
-For the complete list of arguments run:
+Found a bug or have a question? [Open an issue](https://github.com/degiz/kobo2calibre/issues) on GitHub.
 
-```bash
-poetry run python kobo2calibre.py --help
-```
-
-# Screenshots
+## Screenshots
 
 ![Screenshot](/screenshots/image.jpg "Screenshot")
