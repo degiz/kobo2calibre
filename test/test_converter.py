@@ -25,7 +25,7 @@ class TestConverter(unittest.TestCase):
         {
             "name": "new_native",
             "highlights_file": "highlights_new_native.json",
-            "epub_file": "new_native.epub",
+            "epub_file": "jung.epub",
             "kepub_format": "new",
         },
     ]
