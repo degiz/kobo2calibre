@@ -70,6 +70,7 @@ def get_calibre_book_id(kobo_volume: pathlib.Path, lpath: str) -> int:
 
 
 def get_kobo_content_path_by_book_id(kobo_volume: pathlib.Path, book_id: int) -> str:
+    """Get the kobo content path by book id."""
     calibre_device_metadata = kobo_volume.resolve() / "metadata.calibre"
     with open(calibre_device_metadata) as f:
         metadata = json.load(f)
@@ -128,7 +129,7 @@ def get_dictinct_highlights_from_kobo(
 
         cur1 = con.cursor()
         for row in cur1.execute(
-            f"SELECT * FROM `Bookmark` WHERE `VolumeID` = '{name}' AND text !=''"
+            f'SELECT * FROM "Bookmark" WHERE "VolumeID" = {repr(name)} AND text !=""'
         ):
             content_path = row[2].split("epub!")[-1]
             content_path = content_path.lstrip("!")
@@ -162,7 +163,8 @@ def get_highlights_from_calibre_by_book_id(
 
     result = []
     for query_result in cur.execute(
-        f"SELECT `annot_data` FROM `annotations` WHERE `book` = '{book_id}' and `user_type` = 'local'",
+        f'SELECT "annot_data" FROM "annotations" '
+        f'WHERE "book" = {repr(book_id)} and "user_type" = \'local\'',
     ):
         annot_data = json.loads(query_result[0])
 
@@ -193,7 +195,7 @@ def get_distinct_highlights_from_calibre(
 
     result = {}
     for query_result in cur.execute(
-        f"SELECT `annot_data`, `book` FROM `annotations` WHERE `user_type` = 'local'",
+        "SELECT `annot_data`, `book` FROM `annotations` WHERE `user_type` = 'local'",
     ):
         annot_data = json.loads(query_result[0])
         book = query_result[1]
@@ -226,7 +228,7 @@ def get_highlights_from_kobo_by_book(
 
     cur1 = con.cursor()
     for row in cur1.execute(
-        f"SELECT * FROM `Bookmark` WHERE `VolumeID` = '{book}' AND text !=''"
+        f'SELECT * FROM "Bookmark" WHERE "VolumeID" = {repr(book)} AND text !=""'
     ):
         content_path = row[2].split("epub!")[-1]
         content_path = content_path.lstrip("!")
@@ -310,7 +312,7 @@ def insert_highlights_into_kobo(
     for h in highlights:
 
         if cur.execute(
-            f"SELECT `BookmarkID` from `Bookmark` where `BookmarkID` = '{h.uuid}'"
+            f'SELECT "BookmarkID" from "Bookmark" where "BookmarkID" = {repr(h.uuid)}'
         ).fetchone():
             logger.debug(
                 f"Annotation with id {h.uuid} (from {h.volume_id}) already exists in db"
