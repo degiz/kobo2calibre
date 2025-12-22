@@ -241,6 +241,7 @@ def process_calibre_epub_from_calibre(
     book_calibre_epub: pathlib.Path,
     kobo_lpath: str,
     highlights: List[db.CalibreSourceHighlight],
+    kepub_format: str = "new",
 ):
     """Process a calibre epub file and return a list of highlights."""
     result = []
@@ -257,19 +258,19 @@ def process_calibre_epub_from_calibre(
                     logger.debug(
                         f"Skipping highlight without spine: {h.highlighted_text}"
                     )
-                soup = BeautifulSoup(
-                    open(pathlib.Path(tmpdirname) / pathlib.Path(h.spine_name)),
-                    "html.parser",
-                )
+                spine_path = pathlib.Path(tmpdirname) / pathlib.Path(h.spine_name)
+                with open(spine_path, "rb") as f:
+                    raw_html = f.read()
+                soup = BeautifulSoup(raw_html, "html.parser")
 
                 # Get text of <h1> tag
                 text = soup.h1.get_text() if soup.h1 else ""
 
                 kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
-                    soup, h.start_cfi
+                    soup, h.start_cfi, raw_html=raw_html, kepub_format=kepub_format
                 )
                 kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(
-                    soup, h.end_cfi
+                    soup, h.end_cfi, raw_html=raw_html, kepub_format=kepub_format
                 )
                 logger.debug(f"Calibre CFI: {h.start_cfi}, {h.end_cfi}")
                 logger.debug(
