@@ -5,7 +5,7 @@ import unittest
 
 # Add parent directory to path to import modules
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-
+# flake8: noqa: E402
 import converter
 import db
 
@@ -31,8 +31,9 @@ class TestConverter(unittest.TestCase):
     def test_kobo_to_calibre_conversion(self):
         """Test the actual CFI conversion from Kobo to Calibre format.
 
-        This is the core integration test that verifies the complete conversion pipeline.
-        Tests via the high-level process_calibre_epub_from_kobo function.
+        This is the core integration test that verifies the complete
+        conversion pipeline. Tests via the high-level
+        process_calibre_epub_from_kobo function.
         """
         test_dir = pathlib.Path(__file__).parent
         project_dir = test_dir.parent
@@ -92,12 +93,14 @@ class TestConverter(unittest.TestCase):
                         self.assertEqual(
                             result_data["start_cfi"],
                             expected["start_cfi"],
-                            f"Start CFI mismatch for '{joined['kobo']['Text'][:30]}...'",
+                            f"Start CFI mismatch for "
+                            f"'{joined['kobo']['Text'][:30]}...'",
                         )
                         self.assertEqual(
                             result_data["end_cfi"],
                             expected["end_cfi"],
-                            f"End CFI mismatch for '{joined['kobo']['Text'][:30]}...'",
+                            f"End CFI mismatch for "
+                            f"'{joined['kobo']['Text'][:30]}...'",
                         )
 
                         # Verify text matches
@@ -122,8 +125,9 @@ class TestConverter(unittest.TestCase):
     def test_calibre_to_kobo_conversion(self):
         """Test the CFI conversion from Calibre to Kobo format.
 
-        Uses the same test data but in reverse: takes Calibre CFI and converts to Kobo path.
-        Tests via the high-level process_calibre_epub_from_calibre function.
+        Uses the same test data but in reverse: takes Calibre CFI and
+        converts to Kobo path. Tests via the high-level
+        process_calibre_epub_from_calibre function.
         """
         test_dir = pathlib.Path(__file__).parent
         project_dir = test_dir.parent
@@ -175,24 +179,32 @@ class TestConverter(unittest.TestCase):
                         self.assertEqual(
                             result.start_path,
                             kobo_h["StartContainerPath"],
-                            f"Start path mismatch for '{joined['expected']['highlighted_text'][:30]}...'",
+                            f"Start path mismatch for "
+                            f"'{joined['expected']['highlighted_text'][:30]}"
+                            f"...'",
                         )
                         self.assertEqual(
                             result.end_path,
                             kobo_h["EndContainerPath"],
-                            f"End path mismatch for '{joined['expected']['highlighted_text'][:30]}...'",
+                            f"End path mismatch for "
+                            f"'{joined['expected']['highlighted_text'][:30]}"
+                            f"...'",
                         )
 
                         # Verify offsets match
                         self.assertEqual(
                             result.start_offset,
                             kobo_h["StartOffset"],
-                            f"Start offset mismatch for '{joined['expected']['highlighted_text'][:30]}...'",
+                            f"Start offset mismatch for "
+                            f"'{joined['expected']['highlighted_text'][:30]}"
+                            f"...'",
                         )
                         self.assertEqual(
                             result.end_offset,
                             kobo_h["EndOffset"],
-                            f"End offset mismatch for '{joined['expected']['highlighted_text'][:30]}...'",
+                            f"End offset mismatch for "
+                            f"'{joined['expected']['highlighted_text'][:30]}"
+                            f"...'",
                         )
 
 
