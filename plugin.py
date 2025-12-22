@@ -71,8 +71,9 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         style = self.style()
         if style:
             icon_label.setPixmap(
-                style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MessageBoxWarning)
-                .pixmap(32, 32)
+                style.standardIcon(
+                    QtWidgets.QStyle.StandardPixmap.SP_MessageBoxWarning
+                ).pixmap(32, 32)
             )
         error_layout.addWidget(icon_label)
 
@@ -132,7 +133,7 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 book_layout.setSpacing(6)
 
                 # Book title - using QFont instead of HTML
-                title_label = QtWidgets.QLabel(book_info['title'])
+                title_label = QtWidgets.QLabel(book_info["title"])
                 title_font = QtGui.QFont()
                 title_font.setPointSize(13)
                 title_font.setBold(True)
@@ -149,7 +150,7 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 highlights_layout = QtWidgets.QHBoxLayout(highlights_widget)
                 highlights_layout.setContentsMargins(10, 0, 0, 0)
                 highlights_layout.setSpacing(5)
-                
+
                 # "Highlights:" label
                 prefix_label = QtWidgets.QLabel("Highlights:")
                 prefix_font = QtGui.QFont()
@@ -157,43 +158,43 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 prefix_label.setFont(prefix_font)
                 prefix_label.setStyleSheet("color: #666;")
                 highlights_layout.addWidget(prefix_label)
-                
+
                 # Kobo count
-                kobo_label = QtWidgets.QLabel(str(book_info['kobo_count']))
+                kobo_label = QtWidgets.QLabel(str(book_info["kobo_count"]))
                 kobo_font = QtGui.QFont()
                 kobo_font.setPointSize(11)
                 kobo_font.setBold(True)
                 kobo_label.setFont(kobo_font)
                 kobo_label.setStyleSheet("color: #e74c3c;")
                 highlights_layout.addWidget(kobo_label)
-                
+
                 # "in Kobo" text
                 kobo_text = QtWidgets.QLabel("in Kobo")
                 kobo_text.setFont(prefix_font)
                 kobo_text.setStyleSheet("color: #666;")
                 highlights_layout.addWidget(kobo_text)
-                
+
                 # Bullet separator
                 bullet_label = QtWidgets.QLabel("•")
                 bullet_label.setFont(prefix_font)
                 bullet_label.setStyleSheet("color: #666;")
                 highlights_layout.addWidget(bullet_label)
-                
+
                 # Calibre count
-                calibre_label = QtWidgets.QLabel(str(book_info['calibre_count']))
+                calibre_label = QtWidgets.QLabel(str(book_info["calibre_count"]))
                 calibre_font = QtGui.QFont()
                 calibre_font.setPointSize(11)
                 calibre_font.setBold(True)
                 calibre_label.setFont(calibre_font)
                 calibre_label.setStyleSheet("color: #27ae60;")
                 highlights_layout.addWidget(calibre_label)
-                
+
                 # "in Calibre" text
                 calibre_text = QtWidgets.QLabel("in Calibre")
                 calibre_text.setFont(prefix_font)
                 calibre_text.setStyleSheet("color: #666;")
                 highlights_layout.addWidget(calibre_text)
-                
+
                 highlights_layout.addStretch()
                 book_layout.addWidget(highlights_widget)
 
