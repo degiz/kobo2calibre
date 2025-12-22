@@ -58,7 +58,9 @@ def split_into_sentences(text: str, lang: str = "en") -> List[str]:
         return [g for g in groups if g != ""]
 
 
-def get_block_offset_from_kepubify(raw_html: bytes, block_num: int, sentence_num: int) -> Optional[int]:
+def get_block_offset_from_kepubify(
+    raw_html: bytes, block_num: int, sentence_num: int
+) -> Optional[int]:
     """
     Use Calibre's kepubify to find the character offset from the start of a block
     to the start of a specific sentence.
@@ -79,7 +81,9 @@ def get_block_offset_from_kepubify(raw_html: bytes, block_num: int, sentence_num
         if spans:
             span_text = spans[0].text or ""
             offset += len(span_text)
-            logger.debug(f"Span {span_id}: len={len(span_text)}, cumulative offset={offset}")
+            logger.debug(
+                f"Span {span_id}: len={len(span_text)}, cumulative offset={offset}"
+            )
 
     # Verify the target span exists
     target_span_id = f"kobo.{block_num}.{sentence_num}"
@@ -480,14 +484,18 @@ def parse_kobo_highlights(
 
         # Total offset = offset to sentence + offset within sentence
         start_total_offset = start_sentence_offset + highlight.start_offset
-        logger.debug(f"Start: block={kobo_n_start}, sentence_offset={start_sentence_offset}, "
-                     f"highlight_offset={highlight.start_offset}, total={start_total_offset}")
+        logger.debug(
+            f"Start: block={kobo_n_start}, sentence_offset={start_sentence_offset}, "
+            f"highlight_offset={highlight.start_offset}, total={start_total_offset}"
+        )
 
         # Find the text node in the original document
         # Note: kepubify block N corresponds to original document block N-1
         # because kepubify consumes block 1 for whitespace at document start
         original_block_start = kobo_n_start - 1
-        start_result = find_text_node_at_block_offset(soup, original_block_start, start_total_offset)
+        start_result = find_text_node_at_block_offset(
+            soup, original_block_start, start_total_offset
+        )
         if not start_result:
             logger.debug("Failed to find start text node in original document")
             return None
@@ -498,7 +506,9 @@ def parse_kobo_highlights(
         if kobo_n_start == kobo_n_end and kobo_n_sentence_start == kobo_n_sentence_end:
             # Same sentence - just different offset
             end_total_offset = start_sentence_offset + highlight.end_offset
-            end_result = find_text_node_at_block_offset(soup, original_block_end, end_total_offset)
+            end_result = find_text_node_at_block_offset(
+                soup, original_block_end, end_total_offset
+            )
         else:
             # Different sentence
             end_sentence_offset = get_block_offset_from_kepubify(
@@ -508,7 +518,9 @@ def parse_kobo_highlights(
                 logger.debug("Failed to find the end sentence offset")
                 return None
             end_total_offset = end_sentence_offset + highlight.end_offset
-            end_result = find_text_node_at_block_offset(soup, original_block_end, end_total_offset)
+            end_result = find_text_node_at_block_offset(
+                soup, original_block_end, end_total_offset
+            )
 
         if not end_result:
             logger.debug("Failed to find end text node in original document")
@@ -535,7 +547,9 @@ def parse_kobo_highlights(
             if kobo_n_sentence_start == kobo_n_sentence_end:
                 kobo_target_end_offset = sentence_start_offset + highlight.end_offset
             else:
-                end_result = find_text_by_kte_path(soup, kobo_n_end, kobo_n_sentence_end)
+                end_result = find_text_by_kte_path(
+                    soup, kobo_n_end, kobo_n_sentence_end
+                )
                 if not end_result:
                     logger.debug("Failed to find the target end node")
                     return None
@@ -554,9 +568,7 @@ def parse_kobo_highlights(
 
     # Common code for both branches
     unique_uuid = str(
-        uuid.uuid3(
-            uuid.NAMESPACE_DNS, f"{start_cfi}*{end_cfi}*{highlight.text})"
-        ).hex
+        uuid.uuid3(uuid.NAMESPACE_DNS, f"{start_cfi}*{end_cfi}*{highlight.text})").hex
     )
 
     calibre_highlight_json = {
@@ -732,7 +744,9 @@ def find_block_and_sentence_for_offset_new_format(
 
         cumulative_offset += span_len
 
-    logger.warning(f"Could not find sentence for offset {char_offset_in_block} in block {kepub_block_num}")
+    logger.warning(
+        f"Could not find sentence for offset {char_offset_in_block} in block {kepub_block_num}"
+    )
     return None
 
 
@@ -769,7 +783,9 @@ def convert_calibre_cfi_to_kobo(
             kobo_path = f"span#kobo\\.{block_num}\\.{sentence_num}"
             return kobo_path, offset_in_sentence
         else:
-            logger.warning("Failed to find block/sentence for new format, falling back to old")
+            logger.warning(
+                "Failed to find block/sentence for new format, falling back to old"
+            )
 
     # Old KTE format or fallback: count text nodes sequentially
     n_tag = 1

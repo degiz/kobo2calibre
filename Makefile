@@ -1,4 +1,4 @@
-.PHONY: build run debug test
+.PHONY: build run debug test format
 
 build:
 	zip Kobo2Calibre.zip \
@@ -20,5 +20,8 @@ test:
 	calibre-debug test/run_tests.py
 	flake8 .
 	rm -rf .mypy_cache && mypy . --explicit-package-bases --namespace-packages
+
+format:
+	black .
 	
 
