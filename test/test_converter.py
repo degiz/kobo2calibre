@@ -19,7 +19,7 @@ class TestConverter(unittest.TestCase):
         {
             "name": "old_kte",
             "highlights_file": "highlights_old_kte.json",
-            "epub_file": "old_kte.epub",
+            "epub_file": "jung.epub",
             "kepub_format": "old",
         },
         {
