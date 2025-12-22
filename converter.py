@@ -655,57 +655,143 @@ def decode_calibre_cfi(
     return target_node, offset
 
 
-def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
+def find_block_and_sentence_for_offset_new_format(
+    raw_html: bytes,
+    soup: BeautifulSoup,
+    target_node: bs4.element.NavigableString,
+    overall_offset: int,
+) -> Optional[Tuple[int, int, int]]:
+    """
+    Find the kepubify block number and sentence for a target offset.
+
+    This works by:
+    1. Finding which block element contains the target node
+    2. Calculating the character offset from the block start
+    3. Using kepubify to find which sentence contains that offset
+
+    Returns (block_num, sentence_num, offset_in_sentence) or None.
+    """
+    if not HAS_KEPUBIFY:
+        return None
+
+    # Find which block element contains the target node
+    # Use identity comparison (is) rather than equality (in) because
+    # multiple text nodes may have the same content (e.g., ".")
+    block_num = 0
+    containing_block = None
+    for elem in soup.body.descendants:
+        if isinstance(elem, bs4.element.Tag) and elem.name.lower() in BLOCK_TAGS:
+            block_num += 1
+            # Check if target_node is a descendant of this block using identity
+            for desc in elem.descendants:
+                if desc is target_node:
+                    containing_block = elem
+                    break
+            if containing_block:
+                break
+
+    if containing_block is None:
+        logger.warning("Could not find containing block for target node")
+        return None
+
+    # Calculate offset from block start to target position
+    char_offset_in_block = 0
+    for node in containing_block.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
+            continue
+
+        if node is target_node:
+            char_offset_in_block += overall_offset
+            break
+        char_offset_in_block += len(str(node))
+
+    # kepubify block N corresponds to original block N-1, so we add 1
+    kepub_block_num = block_num + 1
+
+    # Now use kepubify to find which sentence contains this offset
+    root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+
+    # Find all spans in this block
+    cumulative_offset = 0
+    for sent_num in range(1, 100):  # reasonable upper limit
+        span_id = f"kobo.{kepub_block_num}.{sent_num}"
+        spans = root.xpath(f'//*[@id="{span_id}"]')
+        if not spans:
+            break
+
+        span_text = spans[0].text or ""
+        span_len = len(span_text)
+
+        # Use >= to handle end positions that point just past the last character
+        if cumulative_offset + span_len >= char_offset_in_block:
+            offset_in_sentence = char_offset_in_block - cumulative_offset
+            return (kepub_block_num, sent_num, offset_in_sentence)
+
+        cumulative_offset += span_len
+
+    logger.warning(f"Could not find sentence for offset {char_offset_in_block} in block {kepub_block_num}")
+    return None
+
+
+def convert_calibre_cfi_to_kobo(
+    soup: BeautifulSoup, cfi: str, raw_html: bytes = None, kepub_format: str = "old"
+) -> Tuple[str, int]:
     r"""
     Converts a Calibre CFI to a Kobo reader CFI.
+
+    Args:
+        soup: BeautifulSoup of the HTML document
+        cfi: Calibre CFI string
+        raw_html: Raw HTML bytes (required for new format)
+        kepub_format: 'old' for KTE plugin format, 'new' for Calibre kepubify format
 
     Returns a tuple:
       (kobo_path, kobo_offset)
     where:
-      kobo_path: a string of the form "span#kobo\.{n_block}\.{n_sentence}"
+      kobo_path: a string of the form "span#kobo\.{n_tag}\.{n_sentence}"
       kobo_offset: the character offset within the given sentence.
     """
     # Decode the Calibre CFI first to obtain the target text node and overall offset
     target_node, overall_offset = decode_calibre_cfi(soup, cfi)
 
-    # Traverse the document using Kobo's block-based numbering scheme
-    # Calibre kepubify starts paranum at 0, increments before first text
-    paranum = 0
-    increment_next_para = True
+    use_new_format = is_new_kepub_format(kepub_format)
+
+    if use_new_format and raw_html and HAS_KEPUBIFY:
+        # Use block-based counting for new kepubify format
+        result = find_block_and_sentence_for_offset_new_format(
+            raw_html, soup, target_node, overall_offset
+        )
+        if result:
+            block_num, sentence_num, offset_in_sentence = result
+            kobo_path = f"span#kobo\\.{block_num}\\.{sentence_num}"
+            return kobo_path, offset_in_sentence
+        else:
+            logger.warning("Failed to find block/sentence for new format, falling back to old")
+
+    # Old KTE format or fallback: count text nodes sequentially
+    n_tag = 1
     found = False
 
-    for element in soup.body.descendants:
-        # Check if this is a block tag - set flag to increment paranum on next text
-        if isinstance(element, bs4.element.Tag):
-            tagname = element.name.lower() if element.name else ""
-            if tagname in BLOCK_TAGS and not increment_next_para:
-                increment_next_para = True
+    for child in soup.body.descendants:
+        # Skip non-text nodes, comments, or nodes with only whitespace.
+        if not isinstance(child, bs4.element.NavigableString) or isinstance(
+            child, bs4.element.Comment
+        ):
             continue
-
-        # Skip non-text nodes
-        if not isinstance(element, bs4.element.NavigableString):
-            continue
-        if isinstance(element, bs4.element.Comment):
-            continue
-
-        text = str(element)
-        # Skip whitespace-only text
+        text = str(child)
         if text in ("\n", " ", "\u00a0") or text.strip() == "":
             continue
-
-        # Skip text inside figure elements
-        parent_names = [p.name for p in element.parents if hasattr(p, "name")]
+        # Exclude nodes within a <figure>
+        parent_names = [p.name for p in child.parents if isinstance(p, bs4.element.Tag)]
         if "figure" in parent_names:
             continue
 
-        # Increment paragraph counter if we're starting a new block
-        if increment_next_para:
-            paranum += 1
-            increment_next_para = False
-
-        if element == target_node:
+        if child is target_node:
             found = True
             break
+        n_tag += 1
 
     if not found:
         raise ValueError("Target text node not found among the valid text nodes")
@@ -717,7 +803,7 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
     kobo_sentence = 1
     kobo_offset = 0
     for sentence in sentences:
-        if cumulative + len(sentence) > overall_offset:
+        if cumulative + len(sentence) >= overall_offset:
             kobo_offset = overall_offset - cumulative
             break
         cumulative += len(sentence)
@@ -727,8 +813,8 @@ def convert_calibre_cfi_to_kobo(soup: BeautifulSoup, cfi: str) -> (str, int):
         kobo_offset = overall_offset - cumulative
 
     # Construct the Kobo path.
-    # The standard format is: "span#kobo\.{n_block}\.{n_sentence}"
-    kobo_path = f"span#kobo\\.{paranum}\\.{kobo_sentence}"
+    # The standard format is: "span#kobo\.{n_tag}\.{n_sentence}"
+    kobo_path = f"span#kobo\\.{n_tag}\\.{kobo_sentence}"
 
     return kobo_path, kobo_offset
 
