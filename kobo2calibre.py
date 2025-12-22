@@ -5,10 +5,10 @@ import pathlib
 
 try:
     # For calibre gui plugin
-    from calibre_plugins.kobo2calibre import (
+    from calibre_plugins.kobo2calibre import (  # type: ignore
         converter,
-    )  # pyright: reportMissingImports=false
-    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+    )
+    from calibre_plugins.kobo2calibre import db  # type: ignore
 except ImportError:
     # For cli
     import converter  # type: ignore

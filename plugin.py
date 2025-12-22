@@ -1,16 +1,16 @@
 from pathlib import Path
 from typing import Any, List, Tuple
 
-from calibre.gui2.actions import InterfaceAction
-from calibre.gui2.library.views import DeviceBooksView
+from calibre.gui2.actions import InterfaceAction  # type: ignore
+from calibre.gui2.library.views import DeviceBooksView  # type: ignore
 from PyQt6 import QtWidgets
 
 try:
     # For calibre gui plugin
-    from calibre_plugins.kobo2calibre import (
-        converter,  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import (  # type: ignore
+        converter,
     )
-    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import db  # type: ignore
 except ImportError:
     # For local calibre debug
     import os
@@ -33,8 +33,8 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         """Initialize the dialog."""
         super(Kobo2CalibreDialog, self).__init__(gui)
         self.gui = gui
-        self.warnings = []
-        self.info = []
+        self.warnings: List[str] = []
+        self.info: List[str] = []
         self.kepub_format = "new"  # Default value
 
         # For debugging
@@ -55,13 +55,12 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
     def _abort(self, message: str) -> None:
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(QtWidgets.QLabel(message))
-        layout.addWidget(
-            QtWidgets.QDialogButtonBox(
-                QtWidgets.QDialogButtonBox.StandardButton.Ok,
-                accepted=self.accept,
-                parent=self,
-            )
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok,
+            parent=self,
         )
+        button_box.accepted.connect(self.accept)
+        layout.addWidget(button_box)
         self.setLayout(layout)
 
     def _show_info_widget(self) -> None:
@@ -88,17 +87,17 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
             buttons = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.StandardButton.Ok
                 | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
-                accepted=self._do_import,
-                rejected=self.reject,
                 parent=self,
             )
+            buttons.accepted.connect(self._do_import)
+            buttons.rejected.connect(self.reject)
         else:
             layout.addWidget(QtWidgets.QLabel("\nNo books to process"))
             buttons = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.StandardButton.Ok,
-                accepted=self.accept,
                 parent=self,
             )
+            buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
         self.setLayout(layout)
 

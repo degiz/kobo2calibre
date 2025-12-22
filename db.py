@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 logger = logging.getLogger(__name__)
 
 KoboSourceHighlight = namedtuple(
-    "KoboHighlight",
+    "KoboSourceHighlight",
     [
         "start_path",
         "end_path",
@@ -22,7 +22,7 @@ KoboSourceHighlight = namedtuple(
 )
 
 CalibreTargetHighlight = namedtuple(
-    "CalibreHighlight",
+    "CalibreTargetHighlight",
     [
         "book",
         "format",
@@ -121,7 +121,7 @@ def get_dictinct_highlights_from_kobo(
     con = sqlite3.connect(input_kobo_db)
     cur = con.cursor()
 
-    result = {}
+    result: Dict[str, List[KoboSourceHighlight]] = {}
     for distinct_name in cur.execute("SELECT DISTINCT `VolumeID` FROM `Bookmark`"):
         name = distinct_name[0]
         if name not in result:
@@ -193,7 +193,7 @@ def get_distinct_highlights_from_calibre(
     con = sqlite3.connect(input_calibre_db)
     cur = con.cursor()
 
-    result = {}
+    result: Dict[int, List[CalibreSourceHighlight]] = {}
     for query_result in cur.execute(
         "SELECT `annot_data`, `book` FROM `annotations` WHERE `user_type` = 'local'",
     ):

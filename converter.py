@@ -8,25 +8,25 @@ import zipfile
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-import bs4
+import bs4  # type: ignore
 from bs4 import BeautifulSoup
 
 from db import KoboTargetHighlight
 
 try:
     # For calibre gui plugin
-    from calibre_plugins.kobo2calibre import db  # pyright: reportMissingImports=false
+    from calibre_plugins.kobo2calibre import db  # type: ignore
 except ImportError:
     # For cli
     import db  # type: ignore
 
 # Try to import calibre's kepubify (available when running via calibre-debug)
 try:
-    from calibre.ebooks.oeb.polish.kepubify import (
+    from calibre.ebooks.oeb.polish.kepubify import (  # type: ignore
         kepubify_html_data,
         Options as KepubifyOptions,
     )
-    from calibre.spell.break_iterator import sentence_positions
+    from calibre.spell.break_iterator import sentence_positions  # type: ignore
 
     HAS_KEPUBIFY = True
 except ImportError:
@@ -601,7 +601,7 @@ def parse_kobo_highlights(
 
 def decode_calibre_cfi(
     soup: BeautifulSoup, cfi: str
-) -> (bs4.element.NavigableString, int):
+) -> Tuple[bs4.element.NavigableString, int]:
     """Decode a Calibre CFI string.
 
     Returns the target NavigableString and its character offset.

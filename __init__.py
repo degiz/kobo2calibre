@@ -1,6 +1,6 @@
 from typing import Optional
 
-from calibre.customize import InterfaceActionBase
+from calibre.customize import InterfaceActionBase  # type: ignore
 from PyQt6.QtWidgets import QWidget
 
 
