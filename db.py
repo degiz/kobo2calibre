@@ -114,6 +114,11 @@ def get_likely_book_path_from_calibre_by_id(
 
     return book_path
 
+def get_has_color(con: sqlite3.Connection) -> bool:
+    cur = con.cursor()
+    cur.execute("PRAGMA table_info(Bookmark)")
+    columns = [row[1] for row in cur.fetchall()]
+    return "Color" in columns
 
 def get_dictinct_highlights_from_kobo(
     input_kobo_db: pathlib.Path,
@@ -121,6 +126,8 @@ def get_dictinct_highlights_from_kobo(
     """Get distinct highlights from the kobo db."""
     con = sqlite3.connect(input_kobo_db)
     cur = con.cursor()
+
+    has_color = get_has_color(con)
 
     result: Dict[str, List[KoboSourceHighlight]] = {}
     for distinct_name in cur.execute("SELECT DISTINCT `VolumeID` FROM `Bookmark`"):
@@ -130,9 +137,11 @@ def get_dictinct_highlights_from_kobo(
 
         cur1 = con.cursor()
         for row in cur1.execute(
-            f'SELECT * FROM "Bookmark" WHERE "VolumeID" = {repr(name)} AND text !=""'
+            f'''SELECT ContentID, StartContainerPath, EndContainerPath,
+            StartOffset, EndOffset, Text {", Color" if has_color else ""}
+            FROM "Bookmark" WHERE "VolumeID" = {repr(name)} AND text !=""'''
         ):
-            content_path = row[2].split("epub!")[-1]
+            content_path = row[0].split("epub!")[-1]
             content_path = content_path.lstrip("!")
             content_path = content_path.replace("!", "/")
             if "#" in content_path:
@@ -141,13 +150,13 @@ def get_dictinct_highlights_from_kobo(
                 continue
 
             highlight = KoboSourceHighlight(
+                row[1],
+                row[2],
                 row[3],
-                row[6],
+                row[4],
                 row[5],
-                row[8],
-                row[9],
                 content_path,
-                row[24],
+                row[6] if has_color else "",
             )
             result[name].append(highlight)
 
@@ -225,13 +234,17 @@ def get_highlights_from_kobo_by_book(
     """Get highlights from the kobo db for a specific book."""
     con = sqlite3.connect(input_kobo_db)
 
+    has_color = get_has_color(con)
+
     result = []
 
     cur1 = con.cursor()
     for row in cur1.execute(
-        f'SELECT * FROM "Bookmark" WHERE "VolumeID" = {repr(book)} AND text !=""'
+        f'''SELECT ContentID, StartContainerPath, EndContainerPath,
+        StartOffset, EndOffset, Text {", Color" if has_color else ""}
+        FROM "Bookmark" WHERE "VolumeID" = {repr(book)} AND text !=""'''
     ):
-        content_path = row[2].split("epub!")[-1]
+        content_path = row[0].split("epub!")[-1]
         content_path = content_path.lstrip("!")
         content_path = content_path.replace("!", "/")
         if "#" in content_path:
@@ -240,7 +253,8 @@ def get_highlights_from_kobo_by_book(
             continue
 
         highlight = KoboSourceHighlight(
-            row[3], row[6], row[5], row[8], row[9], content_path, row[24]
+            row[1], row[2], row[3], row[4], row[5],
+            content_path, row[6] if has_color else "",
         )
         result.append(highlight)
 
