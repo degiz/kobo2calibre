@@ -64,7 +64,7 @@ class TestConverter(unittest.TestCase):
                             end_offset=kobo_h["EndOffset"],
                             text=kobo_h["Text"],
                             content_path=content_path,
-                            color=kobo_h["Color"],
+                            color=kobo_h.get("Color", 0),
                         )
                     )
 
@@ -202,6 +202,16 @@ class TestConverter(unittest.TestCase):
                             result.end_offset,
                             kobo_h["EndOffset"],
                             f"End offset mismatch for "
+                            f"'{joined['expected']['highlighted_text'][:30]}"
+                            f"...'",
+                        )
+
+                        # Verify color is converted correctly
+                        expected_color = kobo_h.get("Color", 0)
+                        self.assertEqual(
+                            result.color,
+                            expected_color,
+                            f"Color mismatch for "
                             f"'{joined['expected']['highlighted_text'][:30]}"
                             f"...'",
                         )

@@ -74,5 +74,23 @@
       "spine_index": 4,
       "color": "purple"
     }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.2\\.5",
+      "EndContainerPath": "span#kobo\\.2\\.7",
+      "StartOffset": 23,
+      "EndOffset": 45,
+      "Text": "gainsay. Therefore, it has seemed to me particularly timely to introduce",
+      "ContentID": "/mnt/onboard/Jung, C. G. (Carl Gustav)/Psychology of the Unconscious _ A Study of the Transformations the History of the Evolution of Thought - C. G. Jung.kepub.epub!OEBPS!6618037351187764581_65903-h-2.htm.xhtml"
+    },
+    "expected": {
+      "start_cfi": "/2/4/4/1:240",
+      "end_cfi": "/2/4/4/1:312",
+      "highlighted_text": "gainsay. Therefore, it has seemed to me particularly timely to introduce",
+      "spine_name": "OEBPS/6618037351187764581_65903-h-2.htm.xhtml",
+      "spine_index": 3,
+      "color": "yellow"
+    }
   }
 ]

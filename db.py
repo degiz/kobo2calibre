@@ -8,6 +8,16 @@ from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+def has_color_support(kobo_db: pathlib.Path) -> bool:
+    """Check if Kobo device supports colored highlights."""
+    con = sqlite3.connect(kobo_db)
+    cur = con.cursor()
+    columns = cur.execute("PRAGMA table_info(Bookmark)").fetchall()
+    con.close()
+    return any(col[1] == "Color" for col in columns)
+
+
 KoboSourceHighlight = namedtuple(
     "KoboSourceHighlight",
     [
@@ -122,6 +132,8 @@ def get_dictinct_highlights_from_kobo(
     con = sqlite3.connect(input_kobo_db)
     cur = con.cursor()
 
+    supports_color = has_color_support(input_kobo_db)
+
     result: Dict[str, List[KoboSourceHighlight]] = {}
     for distinct_name in cur.execute("SELECT DISTINCT `VolumeID` FROM `Bookmark`"):
         name = distinct_name[0]
@@ -140,6 +152,7 @@ def get_dictinct_highlights_from_kobo(
             if not content_path:
                 continue
 
+            color = row[24] if supports_color else 0
             highlight = KoboSourceHighlight(
                 row[3],
                 row[6],
@@ -147,7 +160,7 @@ def get_dictinct_highlights_from_kobo(
                 row[8],
                 row[9],
                 content_path,
-                row[24],
+                color,
             )
             result[name].append(highlight)
 
@@ -225,6 +238,8 @@ def get_highlights_from_kobo_by_book(
     """Get highlights from the kobo db for a specific book."""
     con = sqlite3.connect(input_kobo_db)
 
+    supports_color = has_color_support(input_kobo_db)
+
     result = []
 
     cur1 = con.cursor()
@@ -239,8 +254,9 @@ def get_highlights_from_kobo_by_book(
         if not content_path:
             continue
 
+        color = row[24] if supports_color else 0
         highlight = KoboSourceHighlight(
-            row[3], row[6], row[5], row[8], row[9], content_path, row[24]
+            row[3], row[6], row[5], row[8], row[9], content_path, color
         )
         result.append(highlight)
 
@@ -306,6 +322,8 @@ def insert_highlights_into_kobo(
     con = sqlite3.connect(output_kobo_db)
     cur = con.cursor()
 
+    supports_color = has_color_support(output_kobo_db)
+
     logger.debug(f"Inserting {len(highlights)} highlights into Kobo")
 
     actually_inserted_count = 0
@@ -318,34 +336,63 @@ def insert_highlights_into_kobo(
             )
             continue
 
-        query = (
-            "INSERT INTO `Bookmark` ("
-            "`VolumeID`, `ContentID`, `Text`, `StartContainerPath`, "
-            "`EndContainerPath`, `StartOffset`, `EndOffset`, `BookmarkID`, "
-            "`Color`, `StartContainerChildIndex`, `EndContainerChildIndex`, `Hidden`,"
-            "`DateCreated`, `DateModified`, `Type`)"
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        cur.execute(
-            query,
-            (
-                h.volume_id,
-                h.content_id,
-                h.text,
-                h.start_path,
-                h.end_path,
-                h.start_offset,
-                h.end_offset,
-                h.uuid,
-                h.color,
-                -99,
-                -99,
-                "false",
-                datetime.now().isoformat(),
-                datetime.now().isoformat(),
-                "highlight",
-            ),
-        )
+        if supports_color:
+            query = (
+                "INSERT INTO `Bookmark` ("
+                "`VolumeID`, `ContentID`, `Text`, `StartContainerPath`, "
+                "`EndContainerPath`, `StartOffset`, `EndOffset`, `BookmarkID`, "
+                "`Color`, `StartContainerChildIndex`, `EndContainerChildIndex`, `Hidden`,"
+                "`DateCreated`, `DateModified`, `Type`)"
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            cur.execute(
+                query,
+                (
+                    h.volume_id,
+                    h.content_id,
+                    h.text,
+                    h.start_path,
+                    h.end_path,
+                    h.start_offset,
+                    h.end_offset,
+                    h.uuid,
+                    h.color,
+                    -99,
+                    -99,
+                    "false",
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                    "highlight",
+                ),
+            )
+        else:
+            query = (
+                "INSERT INTO `Bookmark` ("
+                "`VolumeID`, `ContentID`, `Text`, `StartContainerPath`, "
+                "`EndContainerPath`, `StartOffset`, `EndOffset`, `BookmarkID`, "
+                "`StartContainerChildIndex`, `EndContainerChildIndex`, `Hidden`,"
+                "`DateCreated`, `DateModified`, `Type`)"
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            cur.execute(
+                query,
+                (
+                    h.volume_id,
+                    h.content_id,
+                    h.text,
+                    h.start_path,
+                    h.end_path,
+                    h.start_offset,
+                    h.end_offset,
+                    h.uuid,
+                    -99,
+                    -99,
+                    "false",
+                    datetime.now().isoformat(),
+                    datetime.now().isoformat(),
+                    "highlight",
+                ),
+            )
 
         actually_inserted_count += 1
 
