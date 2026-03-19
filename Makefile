@@ -1,6 +1,7 @@
 .PHONY: build run debug test format lint
 
 build:
+	rm -f Kobo2Calibre.zip
 	zip Kobo2Calibre.zip \
 		converter.py \
 		db.py \
