@@ -243,9 +243,10 @@ class TestCFIEncoding(unittest.TestCase):
     def test_encode_cfi_element_first_child(self):
         """When an element is the first child: <p><em>word</em> rest</p>
 
-        This is the edge case where the old sequential counting diverged.
-        The <em> should get even index 2, and the text " rest" should get
-        odd index 3 (text nodes interleaved with elements).
+        _adjust_node_for_text_offset walks back from " rest" to <em>,
+        producing an even index (2) for <em> with offset unchanged.
+        Calibre's encoder does the same: elements without calibreRangeWrapper
+        don't contribute to offset during backward walk.
         """
         soup = self._make_soup("<html><body><p><em>word</em> rest</p></body></html>")
         p = soup.find("p")
@@ -258,13 +259,18 @@ class TestCFIEncoding(unittest.TestCase):
         self.assertIsInstance(text_node, bs4.element.NavigableString)
         self.assertEqual(str(text_node), " rest")
 
-        # In Calibre's interleaved scheme: <em>=2 (element, even), " rest"=3 (text, odd)
-        # Path: html(/2) -> body(/2) -> p(/2) -> text " rest" = /3:1
+        # _adjust_node_for_text_offset walks back to <em> (index 2, even)
+        # offset stays at 1 (element nodes don't add to offset)
+        # Path: html(/2) -> body(/2) -> p(/2) -> <em> = /2:1
         cfi = converter.encode_cfi(text_node, 1)
-        self.assertEqual(cfi, "/2/2/2/3:1")
+        self.assertEqual(cfi, "/2/2/2/2:1")
 
     def test_encode_cfi_nested_elements(self):
-        """<p><strong><em>bold italic</em></strong> plain</p>"""
+        """<p><strong><em>bold italic</em></strong> plain</p>
+
+        _adjust_node_for_text_offset walks back from " plain" to <strong>
+        (element, no offset added). <strong> gets even index 2.
+        """
         soup = self._make_soup(
             "<html><body><p><strong><em>bold italic</em></strong> plain</p></body></html>"
         )
@@ -273,9 +279,9 @@ class TestCFIEncoding(unittest.TestCase):
         self.assertEqual(str(text_node), " plain")
 
         cfi = converter.encode_cfi(text_node, 0)
-        # <strong>=2, " plain"=3
-        # Path: html(/2) -> body(/2) -> p(/2) -> text " plain" = /3:0
-        self.assertEqual(cfi, "/2/2/2/3:0")
+        # <strong>=2, adjustment walks back to <strong>
+        # Path: html(/2) -> body(/2) -> p(/2) -> <strong> = /2:0
+        self.assertEqual(cfi, "/2/2/2/2:0")
 
     def test_encode_decode_roundtrip(self):
         """Encoding then decoding should return the same node and offset."""
@@ -286,8 +292,9 @@ class TestCFIEncoding(unittest.TestCase):
         self.assertEqual(str(text_node), " rest of text")
 
         cfi = converter.encode_cfi(text_node, 5)
-        # Path: html(/2) -> body(/2) -> div(/2) -> p(/4) -> text " rest..." = /3:5
-        self.assertEqual(cfi, "/2/2/2/4/3:5")
+        # _adjust_node_for_text_offset walks back to <em> (index 2, even)
+        # Path: html(/2) -> body(/2) -> div(/2) -> p(/4) -> <em> = /2:5
+        self.assertEqual(cfi, "/2/2/2/4/2:5")
 
         decoded_node, decoded_offset = converter.decode_calibre_cfi(soup, cfi)
         self.assertIs(decoded_node, text_node)
@@ -311,14 +318,18 @@ class TestCFIEncoding(unittest.TestCase):
         self.assertEqual(offset, 1)
 
     def test_decode_even_step_selects_element(self):
-        """Even final step selects element, then finds first text child within."""
-        soup = self._make_soup("<html><body><p>text<em>emphasis</em></p></body></html>")
-        # Even step 2 -> first element child of <p> -> <em>
-        # Then find first text child of <em> -> "emphasis"
-        # Full path: /2(body)/2(p)/2:4 -> <em>'s text at offset 4
-        node, offset = converter.decode_calibre_cfi(soup, "/2/2/2/2:4")
-        self.assertEqual(str(node), "emphasis")
-        self.assertEqual(offset, 4)
+        """Even final step selects element, then walks forward to find text.
+
+        For <p><em>word</em> rest</p>, Calibre's encode produces /2:5 for
+        " rest" at offset 1 (after adjustment walks back to <em>).
+        Decoding: even step 2 -> <em>, then node_for_text_offset skips <em>
+        (not a text node), finds " rest", returns offset 5.
+        """
+        soup = self._make_soup("<html><body><p><em>word</em> rest</p></body></html>")
+        # CFI /2(body)/2(p)/2:1 -> <em> + walk forward, offset 1 -> " rest" at 1
+        node, offset = converter.decode_calibre_cfi(soup, "/2/2/2/2:1")
+        self.assertEqual(str(node), " rest")
+        self.assertEqual(offset, 1)
 
 
 class TestBs4NodeAtTextOffset(unittest.TestCase):
@@ -372,6 +383,109 @@ class TestBs4NodeAtTextOffset(unittest.TestCase):
         node, off = converter._bs4_node_at_text_offset(body, 1)
         self.assertEqual(str(node), "text")
         self.assertEqual(off, 0)
+
+
+class TestFindElementChildPath(unittest.TestCase):
+    """Unit tests for _find_element_child_path."""
+
+    def _make_soup(self, html):
+        return bs4.BeautifulSoup(html, "html.parser")
+
+    def test_direct_child_of_body(self):
+        """Text directly inside body's first element child."""
+        soup = self._make_soup("<html><body><p>hello</p></body></html>")
+        text_node = soup.find("p").string
+        path = converter._find_element_child_path(soup.body, text_node)
+        self.assertEqual(path, [0])
+
+    def test_second_child_of_body(self):
+        """Text in body's second element child."""
+        soup = self._make_soup("<html><body><h1>title</h1><p>text</p></body></html>")
+        text_node = soup.find("p").string
+        path = converter._find_element_child_path(soup.body, text_node)
+        self.assertEqual(path, [1])
+
+    def test_nested_in_wrapper_div(self):
+        """Text inside body > div > p (nested structure like delta0 epub)."""
+        soup = self._make_soup(
+            "<html><body><div><h2>Title</h2><p>content</p></div></body></html>"
+        )
+        text_node = soup.find("p").string
+        path = converter._find_element_child_path(soup.body, text_node)
+        # body > div(0) > p(1)
+        self.assertEqual(path, [0, 1])
+
+    def test_skips_text_nodes_in_counting(self):
+        """Whitespace text nodes between elements don't affect element indexing."""
+        soup = self._make_soup(
+            "<html><body>\n<h1>title</h1>\n<p>text</p>\n</body></html>"
+        )
+        text_node = soup.find("p").string
+        path = converter._find_element_child_path(soup.body, text_node)
+        # h1 is element child 0, p is element child 1 (whitespace nodes skipped)
+        self.assertEqual(path, [1])
+
+    def test_deeply_nested(self):
+        """Text inside body > div > section > p."""
+        soup = self._make_soup(
+            "<html><body><div><section><p>deep</p></section></div></body></html>"
+        )
+        text_node = soup.find("p").string
+        path = converter._find_element_child_path(soup.body, text_node)
+        # body > div(0) > section(0) > p(0)
+        self.assertEqual(path, [0, 0, 0])
+
+    def test_raises_if_not_under_body(self):
+        """Should raise ValueError if target_node is not a descendant of body."""
+        soup = self._make_soup(
+            "<html><head><title>t</title></head><body><p>x</p></body></html>"
+        )
+        title_text = soup.find("title").string
+        with self.assertRaises(ValueError):
+            converter._find_element_child_path(soup.body, title_text)
+
+
+class TestComputeOffsetInParent(unittest.TestCase):
+    """Unit tests for _compute_offset_in_parent."""
+
+    def _make_soup(self, html):
+        return bs4.BeautifulSoup(html, "html.parser")
+
+    def test_single_text_node(self):
+        """Offset in a simple <p>text</p> is just overall_offset."""
+        soup = self._make_soup("<html><body><p>hello world</p></body></html>")
+        text_node = soup.find("p").string
+        result = converter._compute_offset_in_parent(text_node, 5)
+        self.assertEqual(result, 5)
+
+    def test_text_after_inline_element(self):
+        """Offset accounts for text inside preceding inline elements."""
+        soup = self._make_soup("<html><body><p><em>bold</em> rest</p></body></html>")
+        p = soup.find("p")
+        # Children: [<em>"bold"</em>, " rest"]
+        text_node = list(p.children)[1]  # " rest"
+        self.assertIsInstance(text_node, bs4.element.NavigableString)
+        # "bold" has length 4, so offset 2 in " rest" => 4 + 2 = 6
+        result = converter._compute_offset_in_parent(text_node, 2)
+        self.assertEqual(result, 6)
+
+    def test_first_text_node_zero_offset(self):
+        """First text node with offset 0 returns 0."""
+        soup = self._make_soup("<html><body><p><em>word</em> tail</p></body></html>")
+        em = soup.find("em")
+        text_node = em.string  # "word"
+        result = converter._compute_offset_in_parent(text_node, 0)
+        self.assertEqual(result, 0)
+
+    def test_multiple_inline_elements(self):
+        """Offset sums all preceding text in parent."""
+        soup = self._make_soup("<html><body><p><b>ab</b><i>cd</i>ef</p></body></html>")
+        p = soup.find("p")
+        text_node = list(p.children)[2]  # "ef"
+        self.assertEqual(str(text_node), "ef")
+        # "ab" (2) + "cd" (2) = 4, plus offset 1 => 5
+        result = converter._compute_offset_in_parent(text_node, 1)
+        self.assertEqual(result, 5)
 
 
 if __name__ == "__main__":

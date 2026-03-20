@@ -29,7 +29,7 @@
       "Color": 3
     },
     "expected": {
-      "start_cfi": "/2/4/8/3:198",
+      "start_cfi": "/2/4/8/1:414",
       "end_cfi": "/2/4/10/1:9",
       "highlighted_text": "unscientific.\n\nTo add to",
       "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
@@ -48,8 +48,8 @@
       "Color": 2
     },
     "expected": {
-      "start_cfi": "/2/4/90/3:65",
-      "end_cfi": "/2/4/90/5:1",
+      "start_cfi": "/2/4/90/1:402",
+      "end_cfi": "/2/4/90/1:509",
       "highlighted_text": "is often compared with that of hunger, and this craving and need lying in all humanity is called by Freud libido.",
       "spine_name": "OEBPS/6618037351187764581_65903-h-3.htm.xhtml",
       "spine_index": 4,

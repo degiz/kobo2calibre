@@ -6,7 +6,7 @@ import time
 import uuid
 import zipfile
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import bs4  # type: ignore
 from bs4 import BeautifulSoup
@@ -724,6 +724,47 @@ def _cfi_index_for_child(children, sentinel) -> int:
     raise ValueError("Sentinel node not found among children")
 
 
+def _adjust_node_for_text_offset(
+    target_node: bs4.element.NavigableString, target_offset: int
+) -> Tuple[Any, int]:
+    """Adjust a text node position by walking backward through previous siblings.
+
+    Mirrors Calibre's adjust_node_for_text_offset() from cfi.pyj:
+    walks backward through previousSibling, accumulating text lengths from
+    text node siblings, until reaching the first node in the sequence.
+    This causes the CFI to be encoded relative to the earliest node,
+    which may be an element (like <span>) that precedes the text node.
+
+    Returns (adjusted_node, adjusted_offset).
+    """
+    node = target_node
+    additional_offset = 0
+    adjusted = False
+
+    while True:
+        prev = node.previous_sibling
+        if prev is None:
+            break
+        # In Calibre's JS: if p.nodeType > Node.COMMENT_NODE: break
+        # COMMENT_NODE = 8, ELEMENT_NODE = 1, TEXT_NODE = 3
+        # In bs4: Tags and NavigableStrings (excluding Comments) have
+        # nodeType equivalents ≤ 8, so we only break on unusual node types.
+        # In practice, bs4 children are Tags, NavigableStrings, or Comments.
+        if isinstance(prev, bs4.element.Comment):
+            break
+        if isinstance(prev, bs4.element.NavigableString):
+            additional_offset += len(str(prev))
+        # Element nodes without calibreRangeWrapper are just skipped
+        # (no offset added, but we still move past them)
+        node = prev
+        adjusted = True
+
+    if adjusted:
+        target_offset += additional_offset
+
+    return node, target_offset
+
+
 def encode_cfi(target_node, target_offset) -> str:
     """Encode a CFI for Calibre using the same algorithm as Calibre's viewer.
 
@@ -731,12 +772,30 @@ def encode_cfi(target_node, target_offset) -> str:
     - Intermediate steps: even numbers index element children (2, 4, 6, ...)
     - Final step: uses interleaved numbering where elements=even, text=odd
     - Character offset appended as :<offset>
+
+    Importantly, Calibre's encode() calls adjust_node_for_text_offset() which
+    walks backward through previous siblings, so the CFI is encoded relative
+    to the earliest node in the sibling sequence. For example, if a text node
+    follows a <span>, the CFI will reference the <span>'s index (even) with
+    the offset accumulated across all preceding text.
     """
+    # Apply Calibre's adjust_node_for_text_offset behavior
+    if isinstance(target_node, bs4.element.NavigableString) and not isinstance(
+        target_node, bs4.element.Comment
+    ):
+        adjusted_node, target_offset = _adjust_node_for_text_offset(
+            target_node, target_offset
+        )
+    else:
+        adjusted_node = target_node
+
     logger.debug(
-        "Encoding CFI, target_node: %s, target_offset: %s", target_node, target_offset
+        "Encoding CFI, target_node: %s, target_offset: %s",
+        adjusted_node,
+        target_offset,
     )
-    ancestors = [p for p in target_node.parents][::-1]
-    ancestors.append(target_node)
+    ancestors = [p for p in adjusted_node.parents][::-1]
+    ancestors.append(adjusted_node)
     cfi = ""
 
     # Encode intermediate path segments (all ancestors above the target node)
@@ -744,7 +803,7 @@ def encode_cfi(target_node, target_offset) -> str:
     for i in range(len(ancestors) - 1):
         parent = ancestors[i]
         child = ancestors[i + 1]
-        if child is target_node:
+        if child is adjusted_node:
             break
         # For intermediate steps, only count Tag children (even numbers)
         child_index = 0
@@ -755,12 +814,13 @@ def encode_cfi(target_node, target_offset) -> str:
                     cfi += f"/{child_index * 2}"
                     break
 
-    # Encode the final step using Calibre's interleaved indexing
-    index = _cfi_index_for_child(target_node.parent.children, target_node)
-    if isinstance(target_node, bs4.element.Tag):
-        cfi += f"/{index}/1:{target_offset}"
-    else:
-        cfi += f"/{index}:{target_offset}"
+    # Encode the final step using Calibre's interleaved indexing.
+    # After _adjust_node_for_text_offset, the node may be a Tag (element) but
+    # Calibre's encoder always emits /{index}:{offset} — it does NOT descend
+    # into the element. The offset is relative to the text flow starting at
+    # the adjusted node and continuing through subsequent siblings.
+    index = _cfi_index_for_child(adjusted_node.parent.children, adjusted_node)
+    cfi += f"/{index}:{target_offset}"
 
     return cfi
 
@@ -1053,9 +1113,12 @@ def decode_calibre_cfi(
             raise IndexError("Child index out of bounds while decoding CFI")
         current_node = children[child_index]
 
-    # Process final segment using Calibre's interleaved indexing scheme
-    # This mirrors _cfi_index_for_child: walk children computing the same index,
-    # and return the child when the computed index matches step_num.
+    # Process final segment using Calibre's interleaved indexing scheme.
+    # This mirrors node_for_path_step in cfi.pyj:
+    #   is_element = target % 2 == 0
+    #   target //= 2
+    #   if is_element and target > 0: target -= 1
+    #   node_at_index(parent.childNodes, target, 0, not is_element)
     final_segment = parts[-1]
     m = re.match(r"(\d+):(\d+)", final_segment)
     if not m:
@@ -1063,27 +1126,62 @@ def decode_calibre_cfi(
     step_num = int(m.group(1))
     offset = int(m.group(2))
 
-    index = 0
+    is_element_step = step_num % 2 == 0
+    target_index = step_num // 2
+    if is_element_step and target_index > 0:
+        target_index -= 1
+
+    # Find the node using Calibre's node_at_index logic
+    matched_node = None
+    node_index = 0
     for child in current_node.children:
         if isinstance(child, bs4.element.Comment):
             continue
-        index |= 1  # next text-node slot (odd)
-        if isinstance(child, bs4.element.Tag):
-            index += 1  # elements land on even
-        if index == step_num:
-            if isinstance(child, bs4.element.Tag):
-                # Even step landed on element; find first text child within
-                for subchild in child.children:
-                    if isinstance(
-                        subchild, bs4.element.NavigableString
-                    ) and not isinstance(subchild, bs4.element.Comment):
-                        return subchild, offset
-                raise ValueError("Target element has no text children")
-            elif isinstance(child, bs4.element.NavigableString):
+        if is_element_step:
+            # Looking for element nodes
+            if not isinstance(child, bs4.element.Tag):
+                continue
+        else:
+            # Looking for text nodes
+            if not isinstance(child, bs4.element.NavigableString):
+                continue
+            if isinstance(child, bs4.element.Comment):
+                continue
+        if node_index == target_index:
+            matched_node = child
+            break
+        node_index += 1
+
+    if matched_node is None:
+        raise IndexError(
+            f"Step {step_num} not found among children of <{current_node.name}>"
+        )
+
+    # Apply Calibre's node_for_text_offset: walk children of the parent
+    # starting from matched_node, consuming offset through text content.
+    # In Calibre's cfi.pyj, only text nodes are processed; regular element
+    # nodes (non-calibreRangeWrapper) are simply skipped. Since our documents
+    # never contain calibreRangeWrapper elements, we skip all Tag children.
+    seen_first = False
+    for child in current_node.children:
+        if not seen_first:
+            if child is matched_node:
+                seen_first = True
+            else:
+                continue
+        if isinstance(child, bs4.element.Comment):
+            continue
+        if isinstance(child, bs4.element.NavigableString):
+            text_len = len(str(child))
+            if offset <= text_len:
                 return child, offset
+            offset -= text_len
+        # Element nodes (Tags) are skipped — Calibre's node_for_text_offset
+        # only recurses into calibreRangeWrapper elements, which don't exist
+        # in our source documents.
 
     raise IndexError(
-        f"Step {step_num} not found among children of <{current_node.name}>"
+        f"Offset {offset} out of range after step {step_num} in <{current_node.name}>"
     )
 
 
