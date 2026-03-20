@@ -1,0 +1,6 @@
+# Shared configuration for agent skills.
+# Copy this file to config.yaml and update paths for your setup.
+
+paths:
+  kobo_db: /path/to/KoboReader.sqlite
+  calibre_db: /path/to/calibre/metadata.db

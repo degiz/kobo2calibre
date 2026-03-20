@@ -2,6 +2,7 @@
 .python-version
 pyrightconfig.json
 poetry.lock
+kepubify.py
 
 __pycache__
 .mypy_cache
@@ -12,3 +13,7 @@ __pycache__
 *.org
 *.zip
 .aider*
+
+# Agent config (user-specific paths) and debug logs
+.agents/config.yaml
+.agents/logs/*.log

@@ -1,0 +1,59 @@
+[
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.2\\.1",
+      "EndContainerPath": "span#kobo\\.2\\.1",
+      "StartOffset": 15,
+      "EndOffset": 80,
+      "Text": "the critics are not detached that they do not see this detachment",
+      "ContentID": "/mnt/onboard/test.kepub.epub!OEBPS!chapter1.xhtml",
+      "Color": 0
+    },
+    "expected": {
+      "start_cfi": "/2/4/4/1:15",
+      "end_cfi": "/2/4/4/1:80",
+      "highlighted_text": "the critics are not detached that they do not see this detachment",
+      "spine_name": "OEBPS/chapter1.xhtml",
+      "spine_index": 0,
+      "color": "yellow"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.2\\.1",
+      "EndContainerPath": "span#kobo\\.2\\.2",
+      "StartOffset": 60,
+      "EndOffset": 38,
+      "Text": "see this detachment. It is because they are not looking",
+      "ContentID": "/mnt/onboard/test.kepub.epub!OEBPS!chapter1.xhtml",
+      "Color": 2
+    },
+    "expected": {
+      "start_cfi": "/2/4/4/1:60",
+      "end_cfi": "/2/4/4/1:119",
+      "highlighted_text": "see this detachment. It is because they are not looking",
+      "spine_name": "OEBPS/chapter1.xhtml",
+      "spine_index": 0,
+      "color": "blue"
+    }
+  },
+  {
+    "kobo": {
+      "StartContainerPath": "span#kobo\\.3\\.1",
+      "EndContainerPath": "span#kobo\\.3\\.1",
+      "StartOffset": 0,
+      "EndOffset": 46,
+      "Text": "This chapter has a wrapper div with whitespace",
+      "ContentID": "/mnt/onboard/test.kepub.epub!OEBPS!chapter2.xhtml",
+      "Color": 1
+    },
+    "expected": {
+      "start_cfi": "/2/4/2/4/1:0",
+      "end_cfi": "/2/4/2/4/1:46",
+      "highlighted_text": "This chapter has a wrapper div with whitespace",
+      "spine_name": "OEBPS/chapter2.xhtml",
+      "spine_index": 1,
+      "color": "purple"
+    }
+  }
+]

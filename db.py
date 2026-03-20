@@ -4,7 +4,7 @@ import logging
 import pathlib
 import sqlite3
 from collections import namedtuple
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -403,3 +403,109 @@ def insert_highlights_into_kobo(
     con.commit()
     con.close()
     return actually_inserted_count
+
+
+def delete_kobo_highlights(kobo_db: pathlib.Path, volume_id: str) -> int:
+    """Delete all highlights for a book from Kobo database.
+
+    Args:
+        kobo_db: Path to KoboReader.sqlite database
+        volume_id: VolumeID of the book (e.g., file:///mnt/onboard/...)
+
+    Returns:
+        Number of highlights deleted
+    """
+    con = sqlite3.connect(kobo_db)
+    cur = con.cursor()
+    cur.execute('DELETE FROM Bookmark WHERE VolumeID = ? AND Text != ""', (volume_id,))
+    deleted = cur.rowcount
+    con.commit()
+    con.close()
+    logger.info(f"Deleted {deleted} highlights from Kobo for {volume_id}")
+    return deleted
+
+
+def delete_calibre_highlights(calibre_db: pathlib.Path, book_id: int) -> int:
+    """Delete all highlights for a book from Calibre database.
+
+    Args:
+        calibre_db: Path to metadata.db database
+        book_id: Calibre book ID
+
+    Returns:
+        Number of highlights deleted
+    """
+    con = sqlite3.connect(calibre_db)
+    cur = con.cursor()
+    cur.execute(
+        "DELETE FROM annotations WHERE book = ? AND user_type = 'local'",
+        (book_id,),
+    )
+    deleted = cur.rowcount
+    con.commit()
+    con.close()
+    logger.info(f"Deleted {deleted} highlights from Calibre for book {book_id}")
+    return deleted
+
+
+def get_all_kobo_highlights(
+    kobo_db: pathlib.Path, volume_id: str
+) -> List[Dict[str, Any]]:
+    """Fetch all highlight data for a book from Kobo database.
+
+    This function retrieves complete row data for backup/restore purposes.
+
+    Args:
+        kobo_db: Path to KoboReader.sqlite database
+        volume_id: VolumeID of the book
+
+    Returns:
+        List of dictionaries, each containing all columns for one highlight
+    """
+    con = sqlite3.connect(kobo_db)
+    cur = con.cursor()
+
+    # Get all column names
+    columns_info = cur.execute("PRAGMA table_info(Bookmark)").fetchall()
+    column_names = [col[1] for col in columns_info]
+
+    # Fetch all highlights
+    rows = cur.execute(
+        'SELECT * FROM Bookmark WHERE VolumeID = ? AND Text != "" ORDER BY DateCreated',
+        (volume_id,),
+    ).fetchall()
+
+    con.close()
+
+    # Convert to list of dicts for easy restoration
+    highlights = []
+    for row in rows:
+        highlight_dict = dict(zip(column_names, row))
+        highlights.append(highlight_dict)
+
+    logger.debug(f"Retrieved {len(highlights)} highlights from Kobo for backup")
+    return highlights
+
+
+def restore_kobo_highlight(
+    kobo_db: pathlib.Path, highlight_data: Dict[str, Any]
+) -> None:
+    """Restore a single highlight to Kobo database.
+
+    Args:
+        kobo_db: Path to KoboReader.sqlite database
+        highlight_data: Dictionary containing all column values for the highlight
+    """
+    con = sqlite3.connect(kobo_db)
+    cur = con.cursor()
+
+    columns = list(highlight_data.keys())
+    placeholders = ",".join(["?" for _ in columns])
+    column_names = ",".join([f"`{col}`" for col in columns])
+
+    query = f"INSERT INTO Bookmark ({column_names}) VALUES ({placeholders})"
+    cur.execute(query, tuple(highlight_data.values()))
+
+    con.commit()
+    con.close()
+    logger.debug(f"Restored highlight {highlight_data.get('BookmarkID', 'unknown')}")

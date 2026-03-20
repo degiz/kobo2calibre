@@ -58,6 +58,35 @@ def split_into_sentences(text: str, lang: str = "en") -> List[str]:
         return [g for g in groups if g != ""]
 
 
+def get_kepubify_block_delta(root) -> int:
+    """Determine the delta between kepubify block numbers and original block numbers.
+
+    Kepubify may skip block 1 if there is whitespace text before the first
+    block-level element, causing paranum to increment before any block tag is
+    encountered. In that case the first kepubify block is 2 while the first
+    original block is 1, giving a delta of 1.
+
+    Returns the delta such that: original_block = kepubify_block - delta
+    """
+    # Find the first kobo span to determine what block number kepubify starts at
+    all_spans = root.xpath('//*[starts-with(@id, "kobo.")]')
+    if not all_spans:
+        return 0
+
+    first_id = all_spans[0].get("id", "")
+    # Parse "kobo.N.M"
+    parts = first_id.split(".")
+    if len(parts) >= 2:
+        first_block = int(parts[1])
+        # first_block is the kepubify number for the first block element.
+        # The first block element in the original document is always 1.
+        # If kepubify starts at 2, delta = 1. If it starts at 1, delta = 0.
+        delta = first_block - 1
+        logger.debug(f"Kepubify first block: {first_block}, block delta: {delta}")
+        return delta
+    return 0
+
+
 def get_block_offset_from_kepubify(
     raw_html: bytes, block_num: int, sentence_num: int
 ) -> Optional[int]:
@@ -468,6 +497,10 @@ def parse_kobo_highlights(
         # Use Calibre's kepubify to calculate offsets, then find in original doc
         logger.debug("Using Calibre's kepubify for offset calculation")
 
+        # Determine the delta between kepubify block numbers and original blocks
+        kepub_root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+        block_delta = get_kepubify_block_delta(kepub_root)
+
         # Get offset from block start to sentence start
         start_sentence_offset = get_block_offset_from_kepubify(
             raw_html, kobo_n_start, kobo_n_sentence_start
@@ -484,9 +517,8 @@ def parse_kobo_highlights(
         )
 
         # Find the text node in the original document
-        # Note: kepubify block N corresponds to original document block N-1
-        # because kepubify consumes block 1 for whitespace at document start
-        original_block_start = kobo_n_start - 1
+        # original_block = kepubify_block - delta
+        original_block_start = kobo_n_start - block_delta
         start_result = find_text_node_at_block_offset(
             soup, original_block_start, start_total_offset
         )
@@ -496,7 +528,7 @@ def parse_kobo_highlights(
         target_start_node, start_offset_in_node = start_result
 
         # Handle end offset
-        original_block_end = kobo_n_end - 1
+        original_block_end = kobo_n_end - block_delta
         if kobo_n_start == kobo_n_end and kobo_n_sentence_start == kobo_n_sentence_end:
             # Same sentence - just different offset
             end_total_offset = start_sentence_offset + highlight.end_offset
@@ -716,11 +748,12 @@ def find_block_and_sentence_for_offset_new_format(
             break
         char_offset_in_block += len(str(node))
 
-    # kepubify block N corresponds to original block N-1, so we add 1
-    kepub_block_num = block_num + 1
+    # Convert original block number to kepubify block number using delta
+    root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+    block_delta = get_kepubify_block_delta(root)
+    kepub_block_num = block_num + block_delta
 
     # Now use kepubify to find which sentence contains this offset
-    root = kepubify_html_data(raw_html, opts=KepubifyOptions())
 
     # Find all spans in this block
     cumulative_offset = 0

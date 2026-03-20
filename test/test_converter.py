@@ -26,6 +26,12 @@ class TestConverter(unittest.TestCase):
             "epub_file": "jung.epub",
             "kepub_format": "new",
         },
+        {
+            "name": "new_native_delta0",
+            "highlights_file": "highlights_delta0.json",
+            "epub_file": "delta0.epub",
+            "kepub_format": "new",
+        },
     ]
 
     def test_kobo_to_calibre_conversion(self):
@@ -131,12 +137,11 @@ class TestConverter(unittest.TestCase):
         test_dir = pathlib.Path(__file__).parent
         project_dir = test_dir.parent
 
-        epub_path = project_dir / "test" / "jung.epub"
-        if not epub_path.exists():
-            self.skipTest(f"Test EPUB not found: {epub_path}")
-
         for config in self.TEST_CONFIGS:
             with self.subTest(format=config["name"]):
+                epub_path = project_dir / "test" / config["epub_file"]
+                if not epub_path.exists():
+                    self.skipTest(f"Test EPUB not found: {epub_path}")
                 # Load test data for this config
                 with open(test_dir / config["highlights_file"]) as f:
                     joined_highlights = json.load(f)
