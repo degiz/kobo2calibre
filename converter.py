@@ -27,6 +27,7 @@ try:
         Options as KepubifyOptions,
     )
     from calibre.spell.break_iterator import sentence_positions  # type: ignore
+    from lxml import etree  # type: ignore
 
     HAS_KEPUBIFY = True
 except ImportError:
@@ -35,9 +36,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Fallback regex for CLI mode (when calibre's sentence_positions is not available)
+# Fallback regex for CLI mode (when calibre's sentence_positions is not available).
+# Matches sentences terminated by . ! or ? (NOT colon — neither Calibre's ICU
+# sentence breaker nor Go kepubify treat colon as a sentence terminator).
 REGEX_KTE = re.compile(
-    r'(\s*.*?[\.\!\?\:][\'"\u201c\u201d\u2018\u2019\u2026]?\s*)',
+    r'(\s*.*?[\.\!\?][\'"\u201c\u201d\u2018\u2019\u2026]?\s*)',
     re.UNICODE | re.MULTILINE,
 )
 
@@ -87,6 +90,257 @@ def get_kepubify_block_delta(root) -> int:
     return 0
 
 
+def _lxml_absolute_text_offset(body, target_span, offset_in_span: int) -> int:
+    """Compute the absolute text offset from body start to a position in a kobo span.
+
+    Walks the body's text content (elem.text + child.tail for each element in
+    document order) to compute the total character position.
+    """
+    absolute_pos = 0
+
+    for event, elem in etree.iterwalk(body, events=("start", "end")):
+        if event == "start":
+            if elem is target_span:
+                # The target span's text starts here
+                return absolute_pos + offset_in_span
+            if elem.text:
+                absolute_pos += len(elem.text)
+        elif event == "end":
+            if elem.tail:
+                absolute_pos += len(elem.tail)
+
+    raise ValueError("Target span not found in lxml tree")
+
+
+def _bs4_node_at_text_offset(
+    soup_body, absolute_offset: int, is_end: bool = False
+) -> Tuple[bs4.element.NavigableString, int]:
+    """Find the bs4 NavigableString and offset within it for an absolute text position.
+
+    Walks all NavigableString descendants of body, summing character counts,
+    until the target absolute_offset falls within a node.
+
+    When is_end=True, boundary positions (offset == cumulative + node_len)
+    prefer end-of-current-node over start-of-next-node.
+    """
+    cumulative = 0
+    last_node = None
+    for node in soup_body.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
+            continue
+        text = str(node)
+        node_len = len(text)
+        end_pos = cumulative + node_len
+        if end_pos > absolute_offset:
+            offset_in_node = absolute_offset - cumulative
+            return node, offset_in_node
+        if is_end and end_pos == absolute_offset and node_len > 0:
+            # For end positions, prefer end-of-current-node at boundaries
+            return node, node_len
+        last_node = node
+        cumulative += node_len
+
+    # If absolute_offset equals the total text length, return end of last node
+    if last_node is not None and cumulative == absolute_offset:
+        return last_node, len(str(last_node))
+
+    raise ValueError(
+        f"Absolute offset {absolute_offset} exceeds total text length {cumulative}"
+    )
+
+
+def kobo_span_to_calibre_cfi_via_roundtrip(
+    raw_html: bytes,
+    soup: BeautifulSoup,
+    kobo_block: int,
+    kobo_sentence: int,
+    char_offset: int,
+    is_end: bool = False,
+) -> Optional[str]:
+    """Convert a Kobo span reference to a Calibre CFI using kepubify round-trip.
+
+    This is the most accurate conversion method. It:
+    1. Kepubifies the HTML using Calibre's exact algorithm
+    2. Locates the target kobo span in the kepubified tree
+    3. Computes the absolute text offset from body start
+    4. Finds the same text position in the original (un-kepubified) HTML
+    5. Encodes the CFI from the original document structure
+
+    The key insight: kepubify only wraps existing text in <span> elements,
+    so the text content (and therefore absolute character positions) is
+    preserved between the original and kepubified documents.
+    """
+    if not HAS_KEPUBIFY:
+        return None
+
+    # 1. Kepubify the HTML
+    kepub_root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+
+    # 2. Find the target kobo span
+    span_id = f"kobo.{kobo_block}.{kobo_sentence}"
+    spans = kepub_root.xpath(f'//*[@id="{span_id}"]')
+    if not spans:
+        logger.warning(f"Span {span_id} not found in kepubified HTML")
+        return None
+    target_span = spans[0]
+
+    # 3. Compute absolute text offset in the kepubified document.
+    # The body in kepubified HTML has wrapper divs: book-columns > book-inner
+    # We need to find the body or inner div and walk all text content.
+    inner_divs = kepub_root.xpath('//*[@id="book-inner"]')
+    if inner_divs:
+        text_root = inner_divs[0]
+    else:
+        bodies = kepub_root.xpath("//body") or kepub_root.xpath(
+            '//*[local-name()="body"]'
+        )
+        if not bodies:
+            logger.warning("No body found in kepubified HTML")
+            return None
+        text_root = bodies[0]
+
+    try:
+        absolute_offset = _lxml_absolute_text_offset(
+            text_root, target_span, char_offset
+        )
+    except ValueError as e:
+        logger.warning(f"Failed to compute absolute offset: {e}")
+        return None
+
+    logger.debug(
+        f"Kobo span {span_id} offset {char_offset} -> absolute offset {absolute_offset}"
+    )
+
+    # 4. Find the same text position in the original document (bs4).
+    # The original document has the same text content (minus kobo wrapper divs).
+    try:
+        target_node, offset_in_node = _bs4_node_at_text_offset(
+            soup.body, absolute_offset, is_end=is_end
+        )
+    except ValueError as e:
+        logger.warning(f"Failed to find text node in original document: {e}")
+        return None
+
+    logger.debug(
+        f"Original document: node={repr(str(target_node)[:40])}, "
+        f"offset={offset_in_node}"
+    )
+
+    # 5. Encode the CFI
+    return encode_cfi(target_node, offset_in_node)
+
+
+def calibre_cfi_to_kobo_span_via_roundtrip(
+    raw_html: bytes,
+    soup: BeautifulSoup,
+    target_node: bs4.element.NavigableString,
+    overall_offset: int,
+    is_end: bool = False,
+) -> Optional[Tuple[int, int, int]]:
+    """Convert a decoded Calibre CFI position to a Kobo span reference via roundtrip.
+
+    This is the reverse of kobo_span_to_calibre_cfi_via_roundtrip:
+    1. Computes the absolute text offset from body start in the original doc
+    2. Kepubifies the HTML using Calibre's exact algorithm
+    3. Finds the same text position in the kepubified tree
+    4. Returns the kobo block, sentence, and offset within the sentence
+
+    Returns (block_num, sentence_num, offset_in_sentence) or None.
+    """
+    if not HAS_KEPUBIFY:
+        return None
+
+    # 1. Compute absolute text offset in the original document
+    absolute_offset = 0
+    found = False
+    for node in soup.body.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
+            continue
+
+        if node is target_node:
+            absolute_offset += overall_offset
+            found = True
+            break
+        absolute_offset += len(str(node))
+
+    if not found:
+        logger.warning("Target node not found in original document body")
+        return None
+
+    logger.debug(f"Original document absolute offset: {absolute_offset}")
+
+    # 2. Kepubify the HTML
+    kepub_root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+
+    # 3. Walk the kepubified text content to find the matching position
+    inner_divs = kepub_root.xpath('//*[@id="book-inner"]')
+    if inner_divs:
+        text_root = inner_divs[0]
+    else:
+        bodies = kepub_root.xpath("//body") or kepub_root.xpath(
+            '//*[local-name()="body"]'
+        )
+        if not bodies:
+            logger.warning("No body found in kepubified HTML")
+            return None
+        text_root = bodies[0]
+
+    # Walk all kobo spans, accumulating text to find which span contains our offset
+    cumulative = 0
+    current_block = 0
+    current_sentence = 0
+
+    for event, elem in etree.iterwalk(text_root, events=("start", "end")):
+        if event == "start":
+            span_id = elem.get("id", "")
+            if span_id.startswith("kobo.") and elem.get("class") == "koboSpan":
+                # Parse the span ID
+                parts = span_id.split(".")
+                if len(parts) == 3:
+                    current_block = int(parts[1])
+                    current_sentence = int(parts[2])
+
+                    span_text = "".join(elem.itertext())
+                    span_len = len(span_text)
+
+                    if cumulative + span_len > absolute_offset:
+                        offset_in_sentence = absolute_offset - cumulative
+                        logger.debug(
+                            f"Absolute offset {absolute_offset} -> "
+                            f"kobo.{current_block}.{current_sentence} "
+                            f"offset {offset_in_sentence}"
+                        )
+                        return (current_block, current_sentence, offset_in_sentence)
+                    if (
+                        is_end
+                        and cumulative + span_len == absolute_offset
+                        and span_len > 0
+                    ):
+                        # For end positions, prefer end-of-current-span at boundaries
+                        return (current_block, current_sentence, span_len)
+
+                    cumulative += span_len
+            elif elem.text:
+                # Non-kobo-span text (e.g., whitespace between elements)
+                cumulative += len(elem.text)
+        elif event == "end":
+            if elem.tail:
+                # Check if this tail text is inside a kobo span
+                parent = elem.getparent()
+                parent_id = parent.get("id", "") if parent is not None else ""
+                if not (
+                    parent_id.startswith("kobo.") and parent.get("class") == "koboSpan"
+                ):
+                    cumulative += len(elem.tail)
+
+    logger.warning(f"Could not find kobo span for absolute offset {absolute_offset}")
+    return None
+
+
 def get_block_offset_from_kepubify(
     raw_html: bytes, block_num: int, sentence_num: int
 ) -> Optional[int]:
@@ -101,13 +355,14 @@ def get_block_offset_from_kepubify(
 
     root = kepubify_html_data(raw_html, opts=KepubifyOptions())
 
-    # Sum text lengths of all spans before the target sentence in this block
+    # Sum text lengths of all spans before the target sentence in this block.
+    # Use text_content() to include text from child elements (e.g., img alt text).
     offset = 0
     for sent in range(1, sentence_num):
         span_id = f"kobo.{block_num}.{sent}"
         spans = root.xpath(f'//*[@id="{span_id}"]')
         if spans:
-            span_text = spans[0].text or ""
+            span_text = spans[0].text_content()
             offset += len(span_text)
             logger.debug(
                 f"Span {span_id}: len={len(span_text)}, cumulative offset={offset}"
@@ -297,7 +552,11 @@ def process_calibre_epub_from_calibre(
                     soup, h.start_cfi, raw_html=raw_html, kepub_format=kepub_format
                 )
                 kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(
-                    soup, h.end_cfi, raw_html=raw_html, kepub_format=kepub_format
+                    soup,
+                    h.end_cfi,
+                    raw_html=raw_html,
+                    kepub_format=kepub_format,
+                    is_end=True,
                 )
                 logger.debug(f"Calibre CFI: {h.start_cfi}, {h.end_cfi}")
                 logger.debug(
@@ -361,41 +620,65 @@ def kobo_color_to_calibre_color(color: int) -> str:
     return "yellow"
 
 
+def _cfi_index_for_child(children, sentinel) -> int:
+    """Compute the EPUB CFI index for a child node among its siblings.
+
+    Uses Calibre's bitwise indexing scheme (matching cfi.pyj encode()):
+      - Elements get EVEN numbers (2, 4, 6, ...)
+      - Text/other nodes get ODD numbers (1, 3, 5, ...)
+
+    The algorithm walks children using:
+      index |= 1       -> if even, bump to next odd (text-node slot)
+      if is_element:
+          index += 1   -> elements get one more, landing on even
+    """
+    index = 0
+    for child in children:
+        index |= 1  # ensure odd (next text-node slot)
+        if isinstance(child, bs4.element.Tag):
+            index += 1  # elements land on even numbers
+        if child is sentinel:
+            return index
+    raise ValueError("Sentinel node not found among children")
+
+
 def encode_cfi(target_node, target_offset) -> str:
-    """Encode a CFI for calibre."""
+    """Encode a CFI for Calibre using the same algorithm as Calibre's viewer.
+
+    Calibre's CFI scheme (from src/pyj/read_book/cfi.pyj):
+    - Intermediate steps: even numbers index element children (2, 4, 6, ...)
+    - Final step: uses interleaved numbering where elements=even, text=odd
+    - Character offset appended as :<offset>
+    """
     logger.debug(
         "Encoding CFI, target_node: %s, target_offset: %s", target_node, target_offset
     )
-    nodes = [p for p in target_node.parents][::-1]
-    nodes.append(target_node)
+    ancestors = [p for p in target_node.parents][::-1]
+    ancestors.append(target_node)
     cfi = ""
 
-    # encode all parents of the target node
-    for node_id in range(0, len(nodes)):
-        current_id = 2
-        if nodes[node_id] == target_node:
+    # Encode intermediate path segments (all ancestors above the target node)
+    # These use even-number-only element indexing: /2, /4, /6, ...
+    for i in range(len(ancestors) - 1):
+        parent = ancestors[i]
+        child = ancestors[i + 1]
+        if child is target_node:
             break
-        children = [
-            c for c in nodes[node_id].children if isinstance(c, bs4.element.Tag)
-        ]
-        for child_id in range(0, len(children)):
-            if children[child_id] == nodes[node_id + 1]:
-                cfi += f"/{current_id}"
-                current_id = 2
-                break
-            current_id += 2
+        # For intermediate steps, only count Tag children (even numbers)
+        child_index = 0
+        for c in parent.children:
+            if isinstance(c, bs4.element.Tag):
+                child_index += 1
+                if c is child:
+                    cfi += f"/{child_index * 2}"
+                    break
 
-    # now encode the final node
-    nodes = [p for p in target_node.parent.children]
-    current_id = 1
-    for node in nodes:
-        if node == target_node:
-            if isinstance(node, bs4.element.Tag):
-                cfi += f"/{current_id}/1:{target_offset}"
-            else:
-                cfi += f"/{current_id}:{target_offset}"
-            break
-        current_id += 1
+    # Encode the final step using Calibre's interleaved indexing
+    index = _cfi_index_for_child(target_node.parent.children, target_node)
+    if isinstance(target_node, bs4.element.Tag):
+        cfi += f"/{index}/1:{target_offset}"
+    else:
+        cfi += f"/{index}:{target_offset}"
 
     return cfi
 
@@ -494,68 +777,84 @@ def parse_kobo_highlights(
     use_new_format = is_new_kepub_format(kepub_format)
 
     if use_new_format and HAS_KEPUBIFY:
-        # Use Calibre's kepubify to calculate offsets, then find in original doc
-        logger.debug("Using Calibre's kepubify for offset calculation")
+        # Use kepubify round-trip: kepubify -> find span -> absolute offset -> original
+        logger.debug("Using kepubify round-trip for Kobo->Calibre conversion")
 
-        # Determine the delta between kepubify block numbers and original blocks
-        kepub_root = kepubify_html_data(raw_html, opts=KepubifyOptions())
-        block_delta = get_kepubify_block_delta(kepub_root)
-
-        # Get offset from block start to sentence start
-        start_sentence_offset = get_block_offset_from_kepubify(
-            raw_html, kobo_n_start, kobo_n_sentence_start
+        start_cfi = kobo_span_to_calibre_cfi_via_roundtrip(
+            raw_html,
+            soup,
+            kobo_n_start,
+            kobo_n_sentence_start,
+            highlight.start_offset,
         )
-        if start_sentence_offset is None:
-            logger.debug("Failed to find the start sentence offset")
-            return None
-
-        # Total offset = offset to sentence + offset within sentence
-        start_total_offset = start_sentence_offset + highlight.start_offset
-        logger.debug(
-            f"Start: block={kobo_n_start}, sentence_offset={start_sentence_offset}, "
-            f"highlight_offset={highlight.start_offset}, total={start_total_offset}"
+        end_cfi = kobo_span_to_calibre_cfi_via_roundtrip(
+            raw_html,
+            soup,
+            kobo_n_end,
+            kobo_n_sentence_end,
+            highlight.end_offset,
+            is_end=True,
         )
 
-        # Find the text node in the original document
-        # original_block = kepubify_block - delta
-        original_block_start = kobo_n_start - block_delta
-        start_result = find_text_node_at_block_offset(
-            soup, original_block_start, start_total_offset
-        )
-        if not start_result:
-            logger.debug("Failed to find start text node in original document")
-            return None
-        target_start_node, start_offset_in_node = start_result
-
-        # Handle end offset
-        original_block_end = kobo_n_end - block_delta
-        if kobo_n_start == kobo_n_end and kobo_n_sentence_start == kobo_n_sentence_end:
-            # Same sentence - just different offset
-            end_total_offset = start_sentence_offset + highlight.end_offset
-            end_result = find_text_node_at_block_offset(
-                soup, original_block_end, end_total_offset
+        if start_cfi is None or end_cfi is None:
+            logger.debug(
+                "Round-trip conversion failed, falling back to block offset method"
             )
-        else:
-            # Different sentence
-            end_sentence_offset = get_block_offset_from_kepubify(
-                raw_html, kobo_n_end, kobo_n_sentence_end
+            # Fall back to the block-delta + offset method
+            start_cfi = None
+            end_cfi = None
+
+        if start_cfi is None or end_cfi is None:
+            # Block-delta fallback (original approach)
+            logger.debug("Using block-delta fallback for offset calculation")
+            kepub_root = kepubify_html_data(raw_html, opts=KepubifyOptions())
+            block_delta = get_kepubify_block_delta(kepub_root)
+
+            start_sentence_offset = get_block_offset_from_kepubify(
+                raw_html, kobo_n_start, kobo_n_sentence_start
             )
-            if end_sentence_offset is None:
-                logger.debug("Failed to find the end sentence offset")
+            if start_sentence_offset is None:
+                logger.debug("Failed to find the start sentence offset")
                 return None
-            end_total_offset = end_sentence_offset + highlight.end_offset
-            end_result = find_text_node_at_block_offset(
-                soup, original_block_end, end_total_offset
+
+            start_total_offset = start_sentence_offset + highlight.start_offset
+            original_block_start = kobo_n_start - block_delta
+            start_result = find_text_node_at_block_offset(
+                soup, original_block_start, start_total_offset
             )
+            if not start_result:
+                logger.debug("Failed to find start text node in original document")
+                return None
+            target_start_node, start_offset_in_node = start_result
 
-        if not end_result:
-            logger.debug("Failed to find end text node in original document")
-            return None
-        target_end_node, end_offset_in_node = end_result
+            original_block_end = kobo_n_end - block_delta
+            if (
+                kobo_n_start == kobo_n_end
+                and kobo_n_sentence_start == kobo_n_sentence_end
+            ):
+                end_total_offset = start_sentence_offset + highlight.end_offset
+                end_result = find_text_node_at_block_offset(
+                    soup, original_block_end, end_total_offset
+                )
+            else:
+                end_sentence_offset = get_block_offset_from_kepubify(
+                    raw_html, kobo_n_end, kobo_n_sentence_end
+                )
+                if end_sentence_offset is None:
+                    logger.debug("Failed to find the end sentence offset")
+                    return None
+                end_total_offset = end_sentence_offset + highlight.end_offset
+                end_result = find_text_node_at_block_offset(
+                    soup, original_block_end, end_total_offset
+                )
 
-        # Generate CFI using the original document structure
-        start_cfi = encode_cfi(target_start_node, start_offset_in_node)
-        end_cfi = encode_cfi(target_end_node, end_offset_in_node)
+            if not end_result:
+                logger.debug("Failed to find end text node in original document")
+                return None
+            target_end_node, end_offset_in_node = end_result
+
+            start_cfi = encode_cfi(target_start_node, start_offset_in_node)
+            end_cfi = encode_cfi(target_end_node, end_offset_in_node)
     else:
         # Fallback for old KTE format or when kepubify unavailable
         logger.debug(f"Using {'old KTE' if not use_new_format else 'fallback'} format")
@@ -631,14 +930,14 @@ def parse_kobo_highlights(
 def decode_calibre_cfi(
     soup: BeautifulSoup, cfi: str
 ) -> Tuple[bs4.element.NavigableString, int]:
-    """Decode a Calibre CFI string.
+    """Decode a Calibre CFI string using the same algorithm as Calibre's viewer.
 
     Returns the target NavigableString and its character offset.
-    The Calibre CFI format is expected to have slash-separated segments.
-    The intermediate segments (e.g. /2/4/2[id1]/4) are encoded using even
-    numbers. The final segment is of the form '/<node_index>:<offset>',
-    where node_index is counted among all children (including non-tags),
-    starting at 1.
+
+    Calibre's CFI scheme (matching cfi.pyj decode/node_for_path_step):
+    - Even step numbers select element children (index = step/2 - 1, 0-based)
+    - Odd step numbers select text nodes (index = step//2, 0-based)
+    - Final segment format: '<step>:<char_offset>'
     """
     parts = cfi.strip().split("/")
     if len(parts) < 2:
@@ -653,11 +952,10 @@ def decode_calibre_cfi(
         if not m:
             raise ValueError(f"Invalid segment in CFI: '{part}'")
         num = int(m.group(1))
-        # In the encoding for parents an even number was used.
-        # The Calibre algorithm started counting at 2 and incremented by 2.
-        # To invert that, we subtract 2 then divide by 2.
+        # Intermediate steps use even numbers for elements.
+        # To invert: child_index = (num / 2) - 1
         child_index = (num // 2) - 1
-        # Only consider Tag children (as in the original encode)
+        # Only consider Tag children (as in Calibre's algorithm)
         children = [
             child
             for child in current_node.children
@@ -673,27 +971,38 @@ def decode_calibre_cfi(
             raise IndexError("Child index out of bounds while decoding CFI")
         current_node = children[child_index]
 
-    children = [
-        child for child in current_node.children if isinstance(child, bs4.element.Tag)
-    ]
-    logger.debug(f"current_node={current_node.name}, children_count={len(children)}")
-
-    # Process final segment, expected format: e.g. "1:78"
+    # Process final segment using Calibre's interleaved indexing scheme
+    # This mirrors _cfi_index_for_child: walk children computing the same index,
+    # and return the child when the computed index matches step_num.
     final_segment = parts[-1]
     m = re.match(r"(\d+):(\d+)", final_segment)
     if not m:
         raise ValueError("Invalid final segment in CFI: " + final_segment)
-    sibling_number = int(m.group(1))
+    step_num = int(m.group(1))
     offset = int(m.group(2))
-    # For the final segment, we use the parent's full list of children
-    # (including strings)
-    siblings = list(current_node.children)
-    if sibling_number < 1 or sibling_number > len(siblings):
-        raise IndexError("Sibling index out of bounds in final segment")
-    target_node = siblings[sibling_number - 1]
-    if not isinstance(target_node, bs4.element.NavigableString):
-        raise ValueError("Target node is not a text node")
-    return target_node, offset
+
+    index = 0
+    for child in current_node.children:
+        if isinstance(child, bs4.element.Comment):
+            continue
+        index |= 1  # next text-node slot (odd)
+        if isinstance(child, bs4.element.Tag):
+            index += 1  # elements land on even
+        if index == step_num:
+            if isinstance(child, bs4.element.Tag):
+                # Even step landed on element; find first text child within
+                for subchild in child.children:
+                    if isinstance(
+                        subchild, bs4.element.NavigableString
+                    ) and not isinstance(subchild, bs4.element.Comment):
+                        return subchild, offset
+                raise ValueError("Target element has no text children")
+            elif isinstance(child, bs4.element.NavigableString):
+                return child, offset
+
+    raise IndexError(
+        f"Step {step_num} not found among children of <{current_node.name}>"
+    )
 
 
 def find_block_and_sentence_for_offset_new_format(
@@ -763,7 +1072,7 @@ def find_block_and_sentence_for_offset_new_format(
         if not spans:
             break
 
-        span_text = spans[0].text or ""
+        span_text = spans[0].text_content()
         span_len = len(span_text)
 
         # Use >= to handle end positions that point just past the last character
@@ -781,7 +1090,11 @@ def find_block_and_sentence_for_offset_new_format(
 
 
 def convert_calibre_cfi_to_kobo(
-    soup: BeautifulSoup, cfi: str, raw_html: bytes = None, kepub_format: str = "old"
+    soup: BeautifulSoup,
+    cfi: str,
+    raw_html: bytes = None,
+    kepub_format: str = "old",
+    is_end: bool = False,
 ) -> Tuple[str, int]:
     r"""Convert a Calibre CFI to a Kobo reader CFI.
 
@@ -803,10 +1116,18 @@ def convert_calibre_cfi_to_kobo(
     use_new_format = is_new_kepub_format(kepub_format)
 
     if use_new_format and raw_html and HAS_KEPUBIFY:
-        # Use block-based counting for new kepubify format
-        result = find_block_and_sentence_for_offset_new_format(
-            raw_html, soup, target_node, overall_offset
+        # Primary: kepubify round-trip (most accurate)
+        result = calibre_cfi_to_kobo_span_via_roundtrip(
+            raw_html, soup, target_node, overall_offset, is_end=is_end
         )
+        if result is None:
+            # Fallback: block-based counting
+            logger.warning(
+                "Round-trip conversion failed, falling back to block/sentence counting"
+            )
+            result = find_block_and_sentence_for_offset_new_format(
+                raw_html, soup, target_node, overall_offset
+            )
         if result:
             block_num, sentence_num, offset_in_sentence = result
             kobo_path = f"span#kobo\\.{block_num}\\.{sentence_num}"

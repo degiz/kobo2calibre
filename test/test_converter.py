@@ -3,6 +3,9 @@ import pathlib
 import sys
 import unittest
 
+import bs4
+import bs4.element
+
 # Add parent directory to path to import modules
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 # flake8: noqa: E402
@@ -220,6 +223,155 @@ class TestConverter(unittest.TestCase):
                             f"'{joined['expected']['highlighted_text'][:30]}"
                             f"...'",
                         )
+
+
+class TestCFIEncoding(unittest.TestCase):
+    """Unit tests for CFI encoding/decoding with edge cases."""
+
+    def _make_soup(self, html):
+        return bs4.BeautifulSoup(html, "html.parser")
+
+    def test_encode_cfi_text_first_child(self):
+        """When a text node is the first child: <p>hello <em>world</em></p>"""
+        soup = self._make_soup("<html><body><p>hello <em>world</em></p></body></html>")
+        text_node = list(soup.find("p").children)[0]  # "hello "
+        self.assertIsInstance(text_node, bs4.element.NavigableString)
+        cfi = converter.encode_cfi(text_node, 3)
+        # Path: html(/2) -> body(/2) -> p(/2) -> text node 1 = /1:3
+        self.assertEqual(cfi, "/2/2/2/1:3")
+
+    def test_encode_cfi_element_first_child(self):
+        """When an element is the first child: <p><em>word</em> rest</p>
+
+        This is the edge case where the old sequential counting diverged.
+        The <em> should get even index 2, and the text " rest" should get
+        odd index 3 (text nodes interleaved with elements).
+        """
+        soup = self._make_soup("<html><body><p><em>word</em> rest</p></body></html>")
+        p = soup.find("p")
+        # Children: [<em>, " rest"]
+        children = list(p.children)
+        self.assertEqual(len(children), 2)
+
+        # The text " rest" is the second child, after <em>
+        text_node = children[1]
+        self.assertIsInstance(text_node, bs4.element.NavigableString)
+        self.assertEqual(str(text_node), " rest")
+
+        # In Calibre's interleaved scheme: <em>=2 (element, even), " rest"=3 (text, odd)
+        # Path: html(/2) -> body(/2) -> p(/2) -> text " rest" = /3:1
+        cfi = converter.encode_cfi(text_node, 1)
+        self.assertEqual(cfi, "/2/2/2/3:1")
+
+    def test_encode_cfi_nested_elements(self):
+        """<p><strong><em>bold italic</em></strong> plain</p>"""
+        soup = self._make_soup(
+            "<html><body><p><strong><em>bold italic</em></strong> plain</p></body></html>"
+        )
+        p = soup.find("p")
+        text_node = list(p.children)[1]  # " plain"
+        self.assertEqual(str(text_node), " plain")
+
+        cfi = converter.encode_cfi(text_node, 0)
+        # <strong>=2, " plain"=3
+        # Path: html(/2) -> body(/2) -> p(/2) -> text " plain" = /3:0
+        self.assertEqual(cfi, "/2/2/2/3:0")
+
+    def test_encode_decode_roundtrip(self):
+        """Encoding then decoding should return the same node and offset."""
+        html = "<html><body><div><h2>Title</h2><p><em>word</em> rest of text</p></div></body></html>"
+        soup = self._make_soup(html)
+        p = soup.find("p")
+        text_node = list(p.children)[1]  # " rest of text"
+        self.assertEqual(str(text_node), " rest of text")
+
+        cfi = converter.encode_cfi(text_node, 5)
+        # Path: html(/2) -> body(/2) -> div(/2) -> p(/4) -> text " rest..." = /3:5
+        self.assertEqual(cfi, "/2/2/2/4/3:5")
+
+        decoded_node, decoded_offset = converter.decode_calibre_cfi(soup, cfi)
+        self.assertIs(decoded_node, text_node)
+        self.assertEqual(decoded_offset, 5)
+
+    def test_decode_odd_step_selects_text_node(self):
+        """Odd final step selects text nodes by index."""
+        soup = self._make_soup("<html><body><p>first<em>mid</em>last</p></body></html>")
+        # Children of <p>: ["first", <em>, "last"]
+        # Text nodes only: ["first"=index 0, "last"=index 1]
+        # Odd step 1 (index 0) -> "first", step 3 (index 1) -> "last"
+        # Full path: /2(body)/2(p)/1:2 for "first" at offset 2
+        #            /2(body)/2(p)/3:1 for "last" at offset 1
+
+        node, offset = converter.decode_calibre_cfi(soup, "/2/2/2/1:2")
+        self.assertEqual(str(node), "first")
+        self.assertEqual(offset, 2)
+
+        node, offset = converter.decode_calibre_cfi(soup, "/2/2/2/3:1")
+        self.assertEqual(str(node), "last")
+        self.assertEqual(offset, 1)
+
+    def test_decode_even_step_selects_element(self):
+        """Even final step selects element, then finds first text child within."""
+        soup = self._make_soup("<html><body><p>text<em>emphasis</em></p></body></html>")
+        # Even step 2 -> first element child of <p> -> <em>
+        # Then find first text child of <em> -> "emphasis"
+        # Full path: /2(body)/2(p)/2:4 -> <em>'s text at offset 4
+        node, offset = converter.decode_calibre_cfi(soup, "/2/2/2/2:4")
+        self.assertEqual(str(node), "emphasis")
+        self.assertEqual(offset, 4)
+
+
+class TestBs4NodeAtTextOffset(unittest.TestCase):
+    """Unit tests for _bs4_node_at_text_offset boundary conditions."""
+
+    def _make_body(self, html):
+        soup = bs4.BeautifulSoup(html, "html.parser")
+        return soup.body
+
+    def test_offset_at_start(self):
+        body = self._make_body("<html><body><p>hello</p></body></html>")
+        node, off = converter._bs4_node_at_text_offset(body, 0)
+        self.assertEqual(str(node), "hello")
+        self.assertEqual(off, 0)
+
+    def test_offset_in_middle(self):
+        body = self._make_body("<html><body><p>hello</p></body></html>")
+        node, off = converter._bs4_node_at_text_offset(body, 3)
+        self.assertEqual(str(node), "hello")
+        self.assertEqual(off, 3)
+
+    def test_boundary_prefers_next_for_start(self):
+        """At a boundary between nodes, start positions go to next node."""
+        body = self._make_body("<html><body><p>ab</p><p>cd</p></body></html>")
+        # "ab" is at offset 0-2, "cd" at offset 2-4
+        # Offset 2 is the boundary — for start, should pick "cd" at offset 0
+        node, off = converter._bs4_node_at_text_offset(body, 2, is_end=False)
+        self.assertEqual(str(node), "cd")
+        self.assertEqual(off, 0)
+
+    def test_boundary_prefers_current_for_end(self):
+        """At a boundary between nodes, end positions stay in current node."""
+        body = self._make_body("<html><body><p>ab</p><p>cd</p></body></html>")
+        # Offset 2 at boundary — for end, should pick "ab" at offset 2
+        node, off = converter._bs4_node_at_text_offset(body, 2, is_end=True)
+        self.assertEqual(str(node), "ab")
+        self.assertEqual(off, 2)
+
+    def test_end_of_document(self):
+        """Offset at the very end of all text should return end of last node."""
+        body = self._make_body("<html><body><p>hello</p></body></html>")
+        node, off = converter._bs4_node_at_text_offset(body, 5)
+        self.assertEqual(str(node), "hello")
+        self.assertEqual(off, 5)
+
+    def test_whitespace_nodes_counted(self):
+        """Whitespace text nodes between elements are counted."""
+        body = self._make_body("<html><body><div>\n<p>text</p>\n</div></body></html>")
+        # Nodes: "\n" (len 1), "text" (len 4), "\n" (len 1)
+        # Offset 1 should be start of "text"
+        node, off = converter._bs4_node_at_text_offset(body, 1)
+        self.assertEqual(str(node), "text")
+        self.assertEqual(off, 0)
 
 
 if __name__ == "__main__":
