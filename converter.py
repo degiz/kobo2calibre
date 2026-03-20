@@ -90,28 +90,6 @@ def get_kepubify_block_delta(root) -> int:
     return 0
 
 
-def _lxml_absolute_text_offset(body, target_span, offset_in_span: int) -> int:
-    """Compute the absolute text offset from body start to a position in a kobo span.
-
-    Walks the body's text content (elem.text + child.tail for each element in
-    document order) to compute the total character position.
-    """
-    absolute_pos = 0
-
-    for event, elem in etree.iterwalk(body, events=("start", "end")):
-        if event == "start":
-            if elem is target_span:
-                # The target span's text starts here
-                return absolute_pos + offset_in_span
-            if elem.text:
-                absolute_pos += len(elem.text)
-        elif event == "end":
-            if elem.tail:
-                absolute_pos += len(elem.tail)
-
-    raise ValueError("Target span not found in lxml tree")
-
-
 def _bs4_node_at_text_offset(
     soup_body, absolute_offset: int, is_end: bool = False
 ) -> Tuple[bs4.element.NavigableString, int]:
@@ -164,13 +142,13 @@ def kobo_span_to_calibre_cfi_via_roundtrip(
     This is the most accurate conversion method. It:
     1. Kepubifies the HTML using Calibre's exact algorithm
     2. Locates the target kobo span in the kepubified tree
-    3. Computes the absolute text offset from body start
-    4. Finds the same text position in the original (un-kepubified) HTML
-    5. Encodes the CFI from the original document structure
+    3. Finds the containing element and computes the structural path
+    4. Follows the same path in the original tree
+    5. Finds the target text node and encodes the CFI
 
-    The key insight: kepubify only wraps existing text in <span> elements,
-    so the text content (and therefore absolute character positions) is
-    preserved between the original and kepubified documents.
+    Important: kepubify preserves text within elements but may add/change
+    whitespace between block elements. We use per-element offsets instead
+    of absolute body offsets to avoid whitespace divergence.
     """
     if not HAS_KEPUBIFY:
         return None
@@ -186,9 +164,8 @@ def kobo_span_to_calibre_cfi_via_roundtrip(
         return None
     target_span = spans[0]
 
-    # 3. Compute absolute text offset in the kepubified document.
-    # The body in kepubified HTML has wrapper divs: book-columns > book-inner
-    # We need to find the body or inner div and walk all text content.
+    # 3. Find the containing element and structural path.
+    # Kepubify wraps body content in book-columns > book-inner.
     inner_divs = kepub_root.xpath('//*[@id="book-inner"]')
     if inner_divs:
         text_root = inner_divs[0]
@@ -201,35 +178,146 @@ def kobo_span_to_calibre_cfi_via_roundtrip(
             return None
         text_root = bodies[0]
 
-    try:
-        absolute_offset = _lxml_absolute_text_offset(
-            text_root, target_span, char_offset
-        )
-    except ValueError as e:
-        logger.warning(f"Failed to compute absolute offset: {e}")
+    # Build path from text_root to the parent element of target_span,
+    # skipping kobo span wrappers (walk up until we reach a non-koboSpan element).
+    # The parent of the kobo span is a structural element (p, h2, div, etc.).
+    structural_parent = target_span.getparent()
+    while (
+        structural_parent is not None
+        and structural_parent is not text_root
+        and structural_parent.get("class") == "koboSpan"
+    ):
+        structural_parent = structural_parent.getparent()
+
+    # Build ancestry chain from structural_parent up to text_root
+    ancestors = []
+    current = structural_parent
+    while current is not None and current is not text_root:
+        ancestors.append(current)
+        current = current.getparent()
+
+    if current is not text_root:
+        logger.warning("Could not find text_root in ancestor chain of target span")
         return None
 
+    ancestors.reverse()  # top-down order
+
+    # Compute 0-based element-child index path
+    path = []
+    parent = text_root
+    for ancestor in ancestors:
+        elem_children = [c for c in parent if isinstance(c, etree._Element)]
+        try:
+            idx = next(i for i, c in enumerate(elem_children) if c is ancestor)
+            path.append(idx)
+        except StopIteration:
+            logger.warning("Ancestor not found among element children")
+            return None
+        parent = ancestor
+
+    # Compute offset within structural_parent by walking kobo spans
+    offset_in_element = 0
+    for event, elem in etree.iterwalk(structural_parent, events=("start",)):
+        elem_id = elem.get("id", "")
+        if elem_id.startswith("kobo.") and elem.get("class") == "koboSpan":
+            if elem is target_span:
+                offset_in_element += char_offset
+                break
+            span_text = "".join(elem.itertext())
+            offset_in_element += len(span_text)
+
     logger.debug(
-        f"Kobo span {span_id} offset {char_offset} -> absolute offset {absolute_offset}"
+        f"Kobo span {span_id} offset {char_offset} -> "
+        f"path {path}, element offset {offset_in_element}"
     )
 
-    # 4. Find the same text position in the original document (bs4).
-    # The original document has the same text content (minus kobo wrapper divs).
+    # 4. Follow the same path in the original (bs4) tree
+    current_bs4 = soup.body
+    for depth, child_index in enumerate(path):
+        elem_children = [
+            c for c in current_bs4.children if isinstance(c, bs4.element.Tag)
+        ]
+        if child_index >= len(elem_children):
+            logger.warning(
+                f"Path index {child_index} out of range at depth {depth} "
+                f"(original tree has {len(elem_children)} children)"
+            )
+            return None
+        current_bs4 = elem_children[child_index]
+
+    # 5. Find the text node at offset_in_element within this element
     try:
         target_node, offset_in_node = _bs4_node_at_text_offset(
-            soup.body, absolute_offset, is_end=is_end
+            current_bs4, offset_in_element, is_end=is_end
         )
     except ValueError as e:
-        logger.warning(f"Failed to find text node in original document: {e}")
+        logger.warning(f"Failed to find text node in original element: {e}")
         return None
 
     logger.debug(
-        f"Original document: node={repr(str(target_node)[:40])}, "
-        f"offset={offset_in_node}"
+        f"Original element: node={repr(str(target_node)[:40])}, offset={offset_in_node}"
     )
 
-    # 5. Encode the CFI
+    # 6. Encode the CFI
     return encode_cfi(target_node, offset_in_node)
+
+
+def _find_element_child_path(
+    soup_body, target_node: bs4.element.NavigableString
+) -> List[int]:
+    """Find the path of element-child indices from soup_body to the parent of target_node.
+
+    Returns a list of 0-based indices. For example, if target_node is inside
+    body > div (0th child) > p (1st child), returns [0, 1].
+    """
+    # Build ancestry chain from target_node's parent up to body
+    ancestors = []
+    current = target_node.parent
+    while current is not None and current is not soup_body:
+        ancestors.append(current)
+        current = current.parent
+
+    if current is not soup_body:
+        raise ValueError("Could not find body in ancestor chain of target node")
+
+    # Reverse to get top-down order (body's child first)
+    ancestors.reverse()
+
+    # For each ancestor, find its 0-based index among element siblings
+    path = []
+    parent = soup_body
+    for ancestor in ancestors:
+        child_index = 0
+        for child in parent.children:
+            if isinstance(child, bs4.element.Tag):
+                if child is ancestor:
+                    path.append(child_index)
+                    break
+                child_index += 1
+        parent = ancestor
+
+    return path
+
+
+def _compute_offset_in_parent(
+    target_node: bs4.element.NavigableString, overall_offset: int
+) -> int:
+    """Compute the character offset within the parent element's text content.
+
+    Walks all NavigableString descendants of target_node's parent element,
+    summing text before target_node, then adds overall_offset.
+    """
+    parent = target_node.parent
+    offset_in_element = 0
+    for node in parent.descendants:
+        if not isinstance(node, bs4.element.NavigableString):
+            continue
+        if isinstance(node, bs4.element.Comment):
+            continue
+        if node is target_node:
+            break
+        offset_in_element += len(str(node))
+    return offset_in_element + overall_offset
 
 
 def calibre_cfi_to_kobo_span_via_roundtrip(
@@ -242,41 +330,39 @@ def calibre_cfi_to_kobo_span_via_roundtrip(
     """Convert a decoded Calibre CFI position to a Kobo span reference via roundtrip.
 
     This is the reverse of kobo_span_to_calibre_cfi_via_roundtrip:
-    1. Computes the absolute text offset from body start in the original doc
-    2. Kepubifies the HTML using Calibre's exact algorithm
-    3. Finds the same text position in the kepubified tree
-    4. Returns the kobo block, sentence, and offset within the sentence
+    1. Finds the structural path from body to the target element
+    2. Computes the character offset within that element
+    3. Kepubifies the HTML and follows the same structural path
+    4. Walks kobo spans within that element to find the right position
+
+    Important: kepubify preserves text within elements but may add/change
+    whitespace between block elements. We use per-element offsets instead
+    of absolute body offsets to avoid whitespace divergence.
 
     Returns (block_num, sentence_num, offset_in_sentence) or None.
     """
     if not HAS_KEPUBIFY:
         return None
 
-    # 1. Compute absolute text offset in the original document
-    absolute_offset = 0
-    found = False
-    for node in soup.body.descendants:
-        if not isinstance(node, bs4.element.NavigableString):
-            continue
-        if isinstance(node, bs4.element.Comment):
-            continue
-
-        if node is target_node:
-            absolute_offset += overall_offset
-            found = True
-            break
-        absolute_offset += len(str(node))
-
-    if not found:
-        logger.warning("Target node not found in original document body")
+    # 1. Find the structural path and offset within the target element
+    try:
+        path = _find_element_child_path(soup.body, target_node)
+    except ValueError as e:
+        logger.warning(f"Could not find element path: {e}")
         return None
 
-    logger.debug(f"Original document absolute offset: {absolute_offset}")
+    element_offset = _compute_offset_in_parent(target_node, overall_offset)
+    logger.debug(
+        f"Target path from body: {path}, "
+        f"offset {element_offset} within parent element text"
+    )
 
     # 2. Kepubify the HTML
     kepub_root = kepubify_html_data(raw_html, opts=KepubifyOptions())
 
-    # 3. Walk the kepubified text content to find the matching position
+    # 3. Follow the same structural path in the kepubified tree.
+    # Kepubify wraps body content in book-columns > book-inner, so
+    # the children of book-inner correspond to the children of body.
     inner_divs = kepub_root.xpath('//*[@id="book-inner"]')
     if inner_divs:
         text_root = inner_divs[0]
@@ -289,55 +375,51 @@ def calibre_cfi_to_kobo_span_via_roundtrip(
             return None
         text_root = bodies[0]
 
-    # Walk all kobo spans, accumulating text to find which span contains our offset
+    # Navigate the path in the kepubified tree
+    current = text_root
+    for depth, child_index in enumerate(path):
+        elem_children = [c for c in current if isinstance(c, etree._Element)]
+        if child_index >= len(elem_children):
+            logger.warning(
+                f"Path index {child_index} out of range at depth {depth} "
+                f"(kepubified tree has {len(elem_children)} children)"
+            )
+            return None
+        current = elem_children[child_index]
+
+    # 4. Walk kobo spans within this element to find the right position
     cumulative = 0
     current_block = 0
     current_sentence = 0
 
-    for event, elem in etree.iterwalk(text_root, events=("start", "end")):
-        if event == "start":
-            span_id = elem.get("id", "")
-            if span_id.startswith("kobo.") and elem.get("class") == "koboSpan":
-                # Parse the span ID
-                parts = span_id.split(".")
-                if len(parts) == 3:
-                    current_block = int(parts[1])
-                    current_sentence = int(parts[2])
+    for event, elem in etree.iterwalk(current, events=("start",)):
+        span_id = elem.get("id", "")
+        if span_id.startswith("kobo.") and elem.get("class") == "koboSpan":
+            parts = span_id.split(".")
+            if len(parts) == 3:
+                current_block = int(parts[1])
+                current_sentence = int(parts[2])
 
-                    span_text = "".join(elem.itertext())
-                    span_len = len(span_text)
+                span_text = "".join(elem.itertext())
+                span_len = len(span_text)
 
-                    if cumulative + span_len > absolute_offset:
-                        offset_in_sentence = absolute_offset - cumulative
-                        logger.debug(
-                            f"Absolute offset {absolute_offset} -> "
-                            f"kobo.{current_block}.{current_sentence} "
-                            f"offset {offset_in_sentence}"
-                        )
-                        return (current_block, current_sentence, offset_in_sentence)
-                    if (
-                        is_end
-                        and cumulative + span_len == absolute_offset
-                        and span_len > 0
-                    ):
-                        # For end positions, prefer end-of-current-span at boundaries
-                        return (current_block, current_sentence, span_len)
+                if cumulative + span_len > element_offset:
+                    offset_in_sentence = element_offset - cumulative
+                    logger.debug(
+                        f"Element offset {element_offset} -> "
+                        f"kobo.{current_block}.{current_sentence} "
+                        f"offset {offset_in_sentence}"
+                    )
+                    return (current_block, current_sentence, offset_in_sentence)
+                if is_end and cumulative + span_len == element_offset and span_len > 0:
+                    return (current_block, current_sentence, span_len)
 
-                    cumulative += span_len
-            elif elem.text:
-                # Non-kobo-span text (e.g., whitespace between elements)
-                cumulative += len(elem.text)
-        elif event == "end":
-            if elem.tail:
-                # Check if this tail text is inside a kobo span
-                parent = elem.getparent()
-                parent_id = parent.get("id", "") if parent is not None else ""
-                if not (
-                    parent_id.startswith("kobo.") and parent.get("class") == "koboSpan"
-                ):
-                    cumulative += len(elem.tail)
+                cumulative += span_len
 
-    logger.warning(f"Could not find kobo span for absolute offset {absolute_offset}")
+    logger.warning(
+        f"Could not find kobo span for element offset {element_offset} "
+        f"in element at path {path}"
+    )
     return None
 
 
