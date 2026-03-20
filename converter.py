@@ -438,13 +438,13 @@ def get_block_offset_from_kepubify(
     root = kepubify_html_data(raw_html, opts=KepubifyOptions())
 
     # Sum text lengths of all spans before the target sentence in this block.
-    # Use text_content() to include text from child elements (e.g., img alt text).
+    # Use itertext() to include text from child elements (e.g., img alt text).
     offset = 0
     for sent in range(1, sentence_num):
         span_id = f"kobo.{block_num}.{sent}"
         spans = root.xpath(f'//*[@id="{span_id}"]')
         if spans:
-            span_text = spans[0].text_content()
+            span_text = "".join(spans[0].itertext())
             offset += len(span_text)
             logger.debug(
                 f"Span {span_id}: len={len(span_text)}, cumulative offset={offset}"
@@ -625,21 +625,28 @@ def process_calibre_epub_from_calibre(
                     logger.debug(
                         f"Skipping highlight without spine: {h.highlighted_text}"
                     )
+                    continue
                 spine_path = pathlib.Path(tmpdirname) / pathlib.Path(h.spine_name)
                 with open(spine_path, "rb") as f:
                     raw_html = f.read()
                 soup = BeautifulSoup(raw_html, "html.parser")
 
-                kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
-                    soup, h.start_cfi, raw_html=raw_html, kepub_format=kepub_format
-                )
-                kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(
-                    soup,
-                    h.end_cfi,
-                    raw_html=raw_html,
-                    kepub_format=kepub_format,
-                    is_end=True,
-                )
+                try:
+                    kobo_start_path, kobo_start_offset = convert_calibre_cfi_to_kobo(
+                        soup, h.start_cfi, raw_html=raw_html, kepub_format=kepub_format
+                    )
+                    kobo_end_path, kobo_end_offset = convert_calibre_cfi_to_kobo(
+                        soup,
+                        h.end_cfi,
+                        raw_html=raw_html,
+                        kepub_format=kepub_format,
+                        is_end=True,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"..failed to convert highlight: {e} text: {h.highlighted_text}"
+                    )
+                    continue
                 logger.debug(f"Calibre CFI: {h.start_cfi}, {h.end_cfi}")
                 logger.debug(
                     f"Kobo CFI: {kobo_start_path}, "
@@ -1252,7 +1259,7 @@ def find_block_and_sentence_for_offset_new_format(
         if not spans:
             break
 
-        span_text = spans[0].text_content()
+        span_text = "".join(spans[0].itertext())
         span_len = len(span_text)
 
         # Use >= to handle end positions that point just past the last character
