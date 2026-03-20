@@ -23,6 +23,9 @@ make lint      # Run ruff check + mypy
 make format    # Run ruff format (auto-fix)
 make dedup     # Remove duplicate highlights and tombstones from Calibre DB
 
+# IMPORTANT: Always run `calibre-customize -b $(pwd)` before `calibre-debug -e`.
+# The dual import pattern loads the installed plugin, not local files.
+
 # Run single test file
 calibre-debug test/test_converter.py
 

@@ -24,9 +24,13 @@ Read `paths.kobo_db` and `paths.calibre_db` from `.agents/config.yaml`. If the f
 
 **WARNING**: Deletes all highlights for selected book (preserved in memory, but lost if skill crashes). User should have backups.
 
-**IMPORTANT** Kobo and Calibre use different versions of the same book: Calibre has a original epub, while Kobo has a kepubified version. The source code of "kepubify" is available in "kepubify.py".
+**IMPORTANT** Kobo and Calibre use different versions of the same book: Calibre has a original epub, while Kobo has a kepubified version. The source code of "kepubify" is available in "kepubify.py". If needed, lookup other source code of Calibre.
 
-**IMPORTANT** Ensure that your version of the plugin is executed, and not the cached version from Calibre.
+**IMPORTANT** Calibre's CFI encode/decode logic lives in `cfi.pyj`: https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/pyj/read_book/cfi.pyj — key functions: `encode()`, `adjust_node_for_text_offset()`, `decode()`, `node_for_text_offset()`.
+
+**IMPORTANT** Calibre's kepubify logic (adds kobo spans to EPUB HTML): https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/ebooks/oeb/polish/kepubify.py — local copy in `kepubify.py`. Key function: `kepubify_html_data()`.
+
+**IMPORTANT** Always run `calibre-customize -b $(pwd)` before `calibre-debug -e`. The dual import loads the installed plugin, not local files. Symptom of staleness: debug logging you added doesn't appear.
 
 ### Phase 1: Identify Book
 1. Verify Kobo mounted: `test -f /Volumes/KOBOeReader/.kobo/KoboReader.sqlite`
