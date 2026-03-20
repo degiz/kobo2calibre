@@ -1,4 +1,4 @@
-.PHONY: build run debug test format lint
+.PHONY: build run debug test format lint dedup
 
 build:
 	rm -f Kobo2Calibre.zip
@@ -26,5 +26,7 @@ lint:
 
 format:
 	ruff format .
-	
+
+dedup:
+	python dedup_calibre.py /Volumes/Stuff/Calibre/metadata.db --apply
 
