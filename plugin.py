@@ -36,6 +36,7 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         self.warnings: List[str] = []
         self.info: List[Any] = []  # Now stores dicts
         self.kepub_format = "new"  # Default value
+        self.direction = "both"  # Default: sync in both directions
 
         # Set dialog properties
         self.setWindowTitle("Kobo2Calibre - Import Highlights")
@@ -275,6 +276,14 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 font-size: 11pt;
                 color: #2c3e50;
             }
+            QRadioButton {
+                font-size: 11pt;
+                color: #2c3e50;
+            }
+            QLabel {
+                font-size: 11pt;
+                color: #2c3e50;
+            }
         """
         )
         options_layout = QtWidgets.QVBoxLayout()
@@ -287,6 +296,42 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         self.kepub_checkbox.stateChanged.connect(self._on_kepub_format_changed)
         options_layout.addWidget(self.kepub_checkbox)
 
+        # Direction separator
+        direction_separator = QtWidgets.QFrame()
+        direction_separator.setFrameShape(QtWidgets.QFrame.Shape.HLine)
+        direction_separator.setStyleSheet("background-color: #d0d0d0; margin: 5px 0;")
+        direction_separator.setMaximumHeight(1)
+        options_layout.addWidget(direction_separator)
+
+        # Direction label
+        direction_label = QtWidgets.QLabel("Sync direction:")
+        direction_font = QtGui.QFont()
+        direction_font.setBold(True)
+        direction_label.setFont(direction_font)
+        options_layout.addWidget(direction_label)
+
+        # Direction radio buttons
+        self.direction_both = QtWidgets.QRadioButton("Both directions")
+        self.direction_kobo2calibre = QtWidgets.QRadioButton("Kobo \u2192 Calibre only")
+        self.direction_calibre2kobo = QtWidgets.QRadioButton("Calibre \u2192 Kobo only")
+        self.direction_both.setChecked(True)  # Default
+        self.direction_both.toggled.connect(
+            lambda checked: self._on_direction_changed("both") if checked else None
+        )
+        self.direction_kobo2calibre.toggled.connect(
+            lambda checked: self._on_direction_changed("kobo2calibre")
+            if checked
+            else None
+        )
+        self.direction_calibre2kobo.toggled.connect(
+            lambda checked: self._on_direction_changed("calibre2kobo")
+            if checked
+            else None
+        )
+        options_layout.addWidget(self.direction_both)
+        options_layout.addWidget(self.direction_kobo2calibre)
+        options_layout.addWidget(self.direction_calibre2kobo)
+
         options_group.setLayout(options_layout)
         layout.addWidget(options_group)
 
@@ -295,7 +340,8 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
 
         # Action section
         buttons = None
-        if self.to_process_from_kobo:
+        has_work = self.to_process_from_kobo or self.to_process_from_calibre
+        if has_work:
             buttons = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.StandardButton.Ok
                 | QtWidgets.QDialogButtonBox.StandardButton.Cancel,
@@ -329,40 +375,57 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         """Handle checkbox state change."""
         self.kepub_format = "old" if state == 2 else "new"  # Qt.CheckState.Checked == 2
 
-    def _do_import(self) -> None:
-        # Use the kepub format from the checkbox
-        to_insert_from_kobo = []
-        for book, highlights in self.to_process_from_kobo:
-            to_insert_from_kobo.extend(
-                converter.process_calibre_epub_from_kobo(
-                    book[2], book[1], highlights, self.kepub_format
-                )
-            )
-        n_inserted_from_kobo = db.insert_highlights_into_calibre(
-            self._calibre_db_path(), to_insert_from_kobo
-        )
+    def _on_direction_changed(self, direction: str) -> None:
+        """Handle direction radio button change."""
+        self.direction = direction
 
-        to_insert_from_calibre = []
-        for book, highlights in self.to_process_from_calibre:
-            kobo_lpath = db.get_kobo_content_path_by_book_id(
-                self._kobo_mount_prefix(), book[1]
-            )
-            to_insert_from_calibre.extend(
-                converter.process_calibre_epub_from_calibre(
-                    book[2], kobo_lpath, highlights
+    def _do_import(self) -> None:
+        n_inserted_from_kobo = 0
+        n_inserted_from_calibre = 0
+
+        # Kobo -> Calibre
+        if self.direction in ("kobo2calibre", "both"):
+            to_insert_from_kobo = []
+            for book, highlights in self.to_process_from_kobo:
+                to_insert_from_kobo.extend(
+                    converter.process_calibre_epub_from_kobo(
+                        book[2], book[1], highlights, self.kepub_format
+                    )
                 )
+            n_inserted_from_kobo = db.insert_highlights_into_calibre(
+                self._calibre_db_path(), to_insert_from_kobo
             )
-        n_inserted_from_calibre = db.insert_highlights_into_kobo(
-            self._kobo_db_path(), to_insert_from_calibre
-        )
+
+        # Calibre -> Kobo
+        if self.direction in ("calibre2kobo", "both"):
+            to_insert_from_calibre = []
+            for book, highlights in self.to_process_from_calibre:
+                kobo_lpath = db.get_kobo_content_path_by_book_id(
+                    self._kobo_mount_prefix(), book[1]
+                )
+                to_insert_from_calibre.extend(
+                    converter.process_calibre_epub_from_calibre(
+                        book[2], kobo_lpath, highlights
+                    )
+                )
+            n_inserted_from_calibre = db.insert_highlights_into_kobo(
+                self._kobo_db_path(), to_insert_from_calibre
+            )
 
         self.accept()
-        QtWidgets.QMessageBox.information(
-            self,
-            "Kobo2Calibre",
-            f"Inserted {n_inserted_from_kobo} highlights into calibre and "
-            f"{n_inserted_from_calibre} highlights into Kobo",
-        )
+
+        # Build a result message based on direction
+        if self.direction == "kobo2calibre":
+            msg = f"Inserted {n_inserted_from_kobo} highlights into Calibre"
+        elif self.direction == "calibre2kobo":
+            msg = f"Inserted {n_inserted_from_calibre} highlights into Kobo"
+        else:
+            msg = (
+                f"Inserted {n_inserted_from_kobo} highlights into Calibre and "
+                f"{n_inserted_from_calibre} highlights into Kobo"
+            )
+
+        QtWidgets.QMessageBox.information(self, "Kobo2Calibre", msg)
 
     def _process_selected_rows(self):
         # We're in library view

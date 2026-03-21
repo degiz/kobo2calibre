@@ -41,59 +41,63 @@ def main(args) -> None:
     # Use kepub_format from args, default to 'new'
     kepub_format = getattr(args, "kepub_format", "new")
 
-    to_insert = []
-    for volume, highlights in db.get_dictinct_highlights_from_kobo(kobo_db).items():
-        likely_book_id, likely_book_path = db.get_likely_book_path_from_calibre(
-            calibre_db, pathlib.Path(args.kobo_volume), volume
-        )
-        if not likely_book_path:
-            logger.debug(f"Failed to match book and skipping it: {volume}")
-            continue
+    direction = getattr(args, "direction", "kobo2calibre")
 
-        if args.filter_bookname and args.filter_bookname not in volume:
-            continue
-
-        logger.debug(f"Processing book: {volume}")
-
-        book_calibre_path = pathlib.Path(args.calibre_library) / pathlib.Path(
-            likely_book_path
-        )
-        book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
-
-        to_insert.extend(
-            converter.process_calibre_epub_from_kobo(
-                book_calibre_epub, likely_book_id, highlights, kepub_format
+    if direction in ("kobo2calibre", "both"):
+        to_insert = []
+        for volume, highlights in db.get_dictinct_highlights_from_kobo(kobo_db).items():
+            likely_book_id, likely_book_path = db.get_likely_book_path_from_calibre(
+                calibre_db, pathlib.Path(args.kobo_volume), volume
             )
-        )
+            if not likely_book_path:
+                logger.debug(f"Failed to match book and skipping it: {volume}")
+                continue
 
-    db.insert_highlights_into_calibre(calibre_db, to_insert)
+            if args.filter_bookname and args.filter_bookname not in volume:
+                continue
 
-    if not args.both_ways:
-        return
-    highlights = db.get_distinct_highlights_from_calibre(calibre_db)
-    logger.debug(f"Calibre has {len(highlights)} books with highlights")
+            logger.debug(f"Processing book: {volume}")
 
-    to_insert = []
-    for book_id, highlights in highlights.items():
-        book_path = db.get_likely_book_path_from_calibre_by_id(calibre_db, book_id)
-        if args.filter_bookname and args.filter_bookname not in book_path:
-            continue
-
-        book_calibre_path = pathlib.Path(args.calibre_library) / pathlib.Path(book_path)
-        book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
-        kobo_lpath = db.get_kobo_content_path_by_book_id(
-            pathlib.Path(args.kobo_volume), book_id
-        )
-
-        logger.debug(f"Processing book: {book_calibre_epub}")
-
-        to_insert.extend(
-            converter.process_calibre_epub_from_calibre(
-                book_calibre_epub, kobo_lpath, highlights
+            book_calibre_path = pathlib.Path(args.calibre_library) / pathlib.Path(
+                likely_book_path
             )
-        )
+            book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
 
-    db.insert_highlights_into_kobo(kobo_db, to_insert)
+            to_insert.extend(
+                converter.process_calibre_epub_from_kobo(
+                    book_calibre_epub, likely_book_id, highlights, kepub_format
+                )
+            )
+
+        db.insert_highlights_into_calibre(calibre_db, to_insert)
+
+    if direction in ("calibre2kobo", "both"):
+        highlights = db.get_distinct_highlights_from_calibre(calibre_db)
+        logger.debug(f"Calibre has {len(highlights)} books with highlights")
+
+        to_insert = []
+        for book_id, highlights in highlights.items():
+            book_path = db.get_likely_book_path_from_calibre_by_id(calibre_db, book_id)
+            if args.filter_bookname and args.filter_bookname not in book_path:
+                continue
+
+            book_calibre_path = pathlib.Path(args.calibre_library) / pathlib.Path(
+                book_path
+            )
+            book_calibre_epub = [b for b in book_calibre_path.glob("*.epub")][0]
+            kobo_lpath = db.get_kobo_content_path_by_book_id(
+                pathlib.Path(args.kobo_volume), book_id
+            )
+
+            logger.debug(f"Processing book: {book_calibre_epub}")
+
+            to_insert.extend(
+                converter.process_calibre_epub_from_calibre(
+                    book_calibre_epub, kobo_lpath, highlights
+                )
+            )
+
+        db.insert_highlights_into_kobo(kobo_db, to_insert)
 
 
 if __name__ == "__main__":
@@ -107,9 +111,11 @@ if __name__ == "__main__":
         help="Full path to the Calibre library",
     )
     parser.add_argument(
-        "--both_ways",
-        action="store_true",
-        required=False,
+        "--direction",
+        type=str,
+        choices=["kobo2calibre", "calibre2kobo", "both"],
+        default="kobo2calibre",
+        help="Sync direction: 'kobo2calibre' (default), 'calibre2kobo', or 'both'",
     )
     parser.add_argument(
         "--filter_bookname",
