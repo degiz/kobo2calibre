@@ -280,12 +280,35 @@ def insert_highlights_into_calibre(
 
     actually_inserted_count = 0
     for h in books_highlights:
-        # check for duplicates
-        if cur.execute(
-            f"SELECT id from annotations where annot_id = '{h.annot_id}'"
-        ).fetchone():
+        # check for duplicates by annot_id (UUID), ignoring tombstones
+        existing = cur.execute(
+            "SELECT id, searchable_text FROM annotations WHERE annot_id = ?",
+            (h.annot_id,),
+        ).fetchone()
+        if existing:
+            if existing[1]:  # non-empty searchable_text → live highlight
+                logger.debug(
+                    f"Annotation with id {h.annot_id} (from {h.book}) already exists in db"
+                )
+                continue
+            else:  # tombstone — remove it so we can re-insert
+                logger.debug(
+                    f"Removing tombstone for annot_id {h.annot_id} (book {h.book})"
+                )
+                cur.execute("DELETE FROM annotations WHERE id = ?", (existing[0],))
+
+        # check for duplicates by text content — catches roundtrip UUID mismatches
+        if (
+            h.searchable_text
+            and cur.execute(
+                "SELECT id FROM annotations "
+                "WHERE book = ? AND searchable_text = ? AND searchable_text != ''",
+                (h.book, h.searchable_text),
+            ).fetchone()
+        ):
             logger.debug(
-                f"Annotation with id {h.annot_id} (from {h.book}) already exists in db"
+                f"Annotation with same text already exists for book {h.book}, "
+                f"skipping (annot_id={h.annot_id})"
             )
             continue
 
@@ -335,11 +358,26 @@ def insert_highlights_into_kobo(
 
     actually_inserted_count = 0
     for h in highlights:
+        # check for duplicates by BookmarkID (UUID)
         if cur.execute(
             f'SELECT "BookmarkID" from "Bookmark" where "BookmarkID" = {repr(h.uuid)}'
         ).fetchone():
             logger.debug(
                 f"Annotation with id {h.uuid} (from {h.volume_id}) already exists in db"
+            )
+            continue
+
+        # check for duplicates by text content — catches roundtrip UUID mismatches
+        if (
+            h.text
+            and cur.execute(
+                'SELECT "BookmarkID" FROM "Bookmark" WHERE "VolumeID" = ? AND "Text" = ?',
+                (h.volume_id, h.text),
+            ).fetchone()
+        ):
+            logger.debug(
+                f"Annotation with same text already exists for {h.volume_id}, "
+                f"skipping (uuid={h.uuid})"
             )
             continue
 
