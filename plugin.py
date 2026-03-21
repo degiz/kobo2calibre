@@ -393,8 +393,12 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         for h in highlights:
             by_book[(h.book, h.format, h.user_type, h.user)].append(h.highlight)
 
-        actually_inserted = 0
+        # Count annotations before and after to get actual inserted count
+        total_inserted = 0
         for (book_id, fmt, user_type, user), annots_list in by_book.items():
+            # Count before
+            before_count = len(calibre_db.all_annotations_for_book(book_id))
+
             # Use merge_annotations_for_book which handles duplicates internally
             calibre_db.merge_annotations_for_book(
                 book_id,
@@ -403,9 +407,12 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                 user_type=user_type,
                 user=user,
             )
-            actually_inserted += len(annots_list)
 
-        return actually_inserted
+            # Count after
+            after_count = len(calibre_db.all_annotations_for_book(book_id))
+            total_inserted += after_count - before_count
+
+        return total_inserted
 
     def _do_import(self) -> None:
         n_inserted_from_kobo = 0
