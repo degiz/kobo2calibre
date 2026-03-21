@@ -97,7 +97,7 @@ def get_likely_book_path_from_calibre(
     calibre_db_path: pathlib.Path, kobo_volume: pathlib.Path, book_lpath: str
 ) -> Tuple[int, str]:
     """Get the likely book path from the calibre db."""
-    con = sqlite3.connect(calibre_db_path)
+    con = sqlite3.connect(calibre_db_path, timeout=30)
     cur = con.cursor()
 
     book_lpath = book_lpath.split("/")[-1]
@@ -116,7 +116,7 @@ def get_likely_book_path_from_calibre_by_id(
     calibre_db_path: pathlib.Path, book_id: int
 ) -> str:
     """Get the likely book path from the calibre db."""
-    con = sqlite3.connect(calibre_db_path)
+    con = sqlite3.connect(calibre_db_path, timeout=30)
     cur = con.cursor()
 
     book_path = cur.execute(f"SELECT path FROM books WHERE id = {book_id}").fetchone()[
@@ -176,7 +176,7 @@ def get_highlights_from_calibre_by_book_id(
     input_calibre_db: pathlib.Path, book_id: int
 ) -> List[CalibreSourceHighlight]:
     """Get distinct highlights from the calibre db."""
-    con = sqlite3.connect(input_calibre_db)
+    con = sqlite3.connect(input_calibre_db, timeout=30)
     cur = con.cursor()
 
     result = []
@@ -209,7 +209,7 @@ def get_distinct_highlights_from_calibre(
     input_calibre_db: pathlib.Path,
 ) -> Dict[int, List[CalibreSourceHighlight]]:
     """Get distinct highlights from the calibre db."""
-    con = sqlite3.connect(input_calibre_db)
+    con = sqlite3.connect(input_calibre_db, timeout=30)
     cur = con.cursor()
 
     result: Dict[int, List[CalibreSourceHighlight]] = {}
@@ -275,7 +275,7 @@ def insert_highlights_into_calibre(
     output_calibre_db: pathlib.Path, books_highlights: List[CalibreTargetHighlight]
 ) -> int:
     """Insert highlights into the calibre db."""
-    con = sqlite3.connect(output_calibre_db)
+    con = sqlite3.connect(output_calibre_db, timeout=30)
     cur = con.cursor()
 
     actually_inserted_count = 0
@@ -482,7 +482,7 @@ def delete_calibre_highlights(calibre_db: pathlib.Path, book_id: int) -> int:
     Returns:
         Number of highlights deleted
     """
-    con = sqlite3.connect(calibre_db)
+    con = sqlite3.connect(calibre_db, timeout=30)
     cur = con.cursor()
     cur.execute(
         "DELETE FROM annotations WHERE book = ? AND user_type = 'local'",

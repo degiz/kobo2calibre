@@ -379,6 +379,34 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
         """Handle direction radio button change."""
         self.direction = direction
 
+    def _insert_highlights_via_api(self, highlights) -> int:
+        """Insert highlights into Calibre using the proper API to avoid db locking."""
+        from collections import defaultdict
+
+        if not highlights:
+            return 0
+
+        calibre_db = self.gui.current_db.new_api
+
+        # Group highlights by (book_id, format, user_type, user)
+        by_book = defaultdict(list)
+        for h in highlights:
+            by_book[(h.book, h.format, h.user_type, h.user)].append(h.highlight)
+
+        actually_inserted = 0
+        for (book_id, fmt, user_type, user), annots_list in by_book.items():
+            # Use merge_annotations_for_book which handles duplicates internally
+            calibre_db.merge_annotations_for_book(
+                book_id,
+                fmt,
+                annots_list,
+                user_type=user_type,
+                user=user,
+            )
+            actually_inserted += len(annots_list)
+
+        return actually_inserted
+
     def _do_import(self) -> None:
         n_inserted_from_kobo = 0
         n_inserted_from_calibre = 0
@@ -392,9 +420,7 @@ class Kobo2CalibreDialog(QtWidgets.QDialog):
                         book[2], book[1], highlights, self.kepub_format
                     )
                 )
-            n_inserted_from_kobo = db.insert_highlights_into_calibre(
-                self._calibre_db_path(), to_insert_from_kobo
-            )
+            n_inserted_from_kobo = self._insert_highlights_via_api(to_insert_from_kobo)
 
         # Calibre -> Kobo
         if self.direction in ("calibre2kobo", "both"):
