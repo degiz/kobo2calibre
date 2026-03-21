@@ -28,6 +28,7 @@ KoboSourceHighlight = namedtuple(
         "text",
         "content_path",
         "color",
+        "note",
     ],
 )
 
@@ -48,7 +49,7 @@ CalibreTargetHighlight = namedtuple(
 
 CalibreSourceHighlight = namedtuple(
     "CalibreSourceHighlight",
-    ["start_cfi", "end_cfi", "spine_name", "highlighted_text", "color"],
+    ["start_cfi", "end_cfi", "spine_name", "highlighted_text", "color", "note"],
 )
 
 
@@ -64,6 +65,7 @@ KoboTargetHighlight = namedtuple(
         "content_id",
         "color",
         "uuid",
+        "note",
     ],
 )
 
@@ -153,6 +155,7 @@ def get_dictinct_highlights_from_kobo(
                 continue
 
             color = row[24] if supports_color else 0
+            note = row[10] if row[10] else ""
             highlight = KoboSourceHighlight(
                 row[3],
                 row[6],
@@ -161,6 +164,7 @@ def get_dictinct_highlights_from_kobo(
                 row[9],
                 content_path,
                 color,
+                note,
             )
             result[name].append(highlight)
 
@@ -193,6 +197,7 @@ def get_highlights_from_calibre_by_book_id(
             annot_data["spine_name"],
             annot_data["highlighted_text"],
             annot_data.get("style", {}).get("which", "yellow"),
+            annot_data.get("notes", ""),
         )
         result.append(highlight)
 
@@ -225,6 +230,7 @@ def get_distinct_highlights_from_calibre(
             annot_data.get("spine_name"),
             annot_data.get("highlighted_text"),
             annot_data.get("style", {}).get("which", "yellow"),
+            annot_data.get("notes", ""),
         )
         result.setdefault(book, []).append(highlight)
 
@@ -255,8 +261,9 @@ def get_highlights_from_kobo_by_book(
             continue
 
         color = row[24] if supports_color else 0
+        note = row[10] if row[10] else ""
         highlight = KoboSourceHighlight(
-            row[3], row[6], row[5], row[8], row[9], content_path, color
+            row[3], row[6], row[5], row[8], row[9], content_path, color, note
         )
         result.append(highlight)
 
@@ -342,8 +349,8 @@ def insert_highlights_into_kobo(
                 "`VolumeID`, `ContentID`, `Text`, `StartContainerPath`, "
                 "`EndContainerPath`, `StartOffset`, `EndOffset`, `BookmarkID`, "
                 "`Color`, `StartContainerChildIndex`, `EndContainerChildIndex`, `Hidden`,"
-                "`DateCreated`, `DateModified`, `Type`)"
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "`DateCreated`, `DateModified`, `Type`, `Annotation`)"
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             cur.execute(
                 query,
@@ -363,6 +370,7 @@ def insert_highlights_into_kobo(
                     datetime.now().isoformat(),
                     datetime.now().isoformat(),
                     "highlight",
+                    h.note if h.note else None,
                 ),
             )
         else:
@@ -371,8 +379,8 @@ def insert_highlights_into_kobo(
                 "`VolumeID`, `ContentID`, `Text`, `StartContainerPath`, "
                 "`EndContainerPath`, `StartOffset`, `EndOffset`, `BookmarkID`, "
                 "`StartContainerChildIndex`, `EndContainerChildIndex`, `Hidden`,"
-                "`DateCreated`, `DateModified`, `Type`)"
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "`DateCreated`, `DateModified`, `Type`, `Annotation`)"
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             cur.execute(
                 query,
@@ -391,6 +399,7 @@ def insert_highlights_into_kobo(
                     datetime.now().isoformat(),
                     datetime.now().isoformat(),
                     "highlight",
+                    h.note if h.note else None,
                 ),
             )
 

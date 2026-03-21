@@ -677,6 +677,7 @@ def process_calibre_epub_from_calibre(
                     f"/mnt/onboard/{kobo_lpath}!{adapted_spinename}",
                     calibre_color_to_kobo_color(h.color),
                     unique_uuid,
+                    h.note,
                 )
                 result.append(kobo_highlight)
 
@@ -1061,6 +1062,9 @@ def parse_kobo_highlights(
         "type": "highlight",
         "uuid": unique_uuid,
     }
+
+    if highlight.note:
+        calibre_highlight_json["notes"] = highlight.note
 
     calibre_highlight = db.CalibreTargetHighlight(
         book_id,

@@ -74,6 +74,7 @@ class TestConverter(unittest.TestCase):
                             text=kobo_h["Text"],
                             content_path=content_path,
                             color=kobo_h.get("Color", 0),
+                            note=kobo_h.get("Annotation", ""),
                         )
                     )
 
@@ -160,6 +161,7 @@ class TestConverter(unittest.TestCase):
                             spine_name=calibre_h["spine_name"],
                             highlighted_text=calibre_h["highlighted_text"],
                             color=calibre_h["color"],
+                            note=calibre_h.get("notes", ""),
                         )
                     )
 

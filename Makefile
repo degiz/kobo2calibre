@@ -1,4 +1,4 @@
-.PHONY: build run debug test format lint dedup
+.PHONY: build run debug test format lint dedup dedup-kobo
 
 build:
 	rm -f Kobo2Calibre.zip
@@ -29,4 +29,7 @@ format:
 
 dedup:
 	python dedup_calibre.py /Volumes/Stuff/Calibre/metadata.db --apply
+
+dedup-kobo:
+	python dedup_kobo.py /Volumes/KOBOeReader/.kobo/KoboReader.sqlite --apply
 
