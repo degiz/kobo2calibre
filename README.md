@@ -28,6 +28,14 @@ When using the plugin, you'll see a checkbox to select your kepub format:
 **Not sure which to choose?** If you're using Calibre 8 or newer and haven't installed the KTE plugin separately, use the new format.
 
 
+## AI Agent Development
+
+This project supports AI coding agents (Claude Code, Cursor, etc.). See `AGENTS.md` for technical reference including commands, code patterns, and troubleshooting.
+
+Available skills in `.agents/skills/`:
+- `debug-highlights` - Diagnose highlight conversion issues
+- `clear-highlights` - Remove highlights from databases
+
 ## Support
 
 Found a bug or have a question? [Open an issue](https://github.com/degiz/kobo2calibre/issues) on GitHub.
